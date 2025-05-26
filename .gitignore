@@ -32,7 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-dryfruit-manager-firebase-adminsdk-fbsvc-1de9e71793.json
 
 # vercel
 .vercel
