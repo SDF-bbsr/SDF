@@ -176,7 +176,7 @@ export default function ManagerDashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                       dataKey="date" 
-                      tickFormatter={(dateStr) => new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
+                      tickFormatter={(dateStr) => new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
                       angle={-30}
                       textAnchor="end"
                       height={50} // Adjust height to accommodate angled labels
