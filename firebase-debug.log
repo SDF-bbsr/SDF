@@ -1,0 +1,314 @@
+[debug] [2025-05-24T13:10:58.250Z] ----------------------------------------------------------------------
+[debug] [2025-05-24T13:10:58.252Z] Command:       /nix/store/rbdrkcs5kkwpalxcd7c6bnm33lk2955n-nodejs-20.19.0/bin/node /nix/store/x1y0l2xj62jgmz6csprhhqzibvdggdpk-firebase-tools-14.3.1/lib/node_modules/firebase-tools/lib/bin/firebase.js deploy
+[debug] [2025-05-24T13:10:58.253Z] CLI Version:   14.3.1
+[debug] [2025-05-24T13:10:58.253Z] Platform:      linux
+[debug] [2025-05-24T13:10:58.253Z] Node Version:  v20.19.0
+[debug] [2025-05-24T13:10:58.253Z] Time:          Sat May 24 2025 13:10:58 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-05-24T13:10:58.253Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-24T13:10:58.566Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:10:58.567Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:10:58.567Z] [iam] checking project dryfruit-manager-460810 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2025-05-24T13:10:58.568Z] No OAuth tokens found
+[debug] [2025-05-24T13:10:58.568Z] No OAuth tokens found
+[debug] [2025-05-24T13:10:58.568Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:10:58.568Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:10:58.569Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions [none]
+[debug] [2025-05-24T13:10:58.570Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions x-goog-quota-user=projects/dryfruit-manager-460810
+[debug] [2025-05-24T13:10:58.570Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2025-05-24T13:10:59.388Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions 200
+[debug] [2025-05-24T13:10:59.388Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2025-05-24T13:10:59.390Z] No OAuth tokens found
+[debug] [2025-05-24T13:10:59.390Z] No OAuth tokens found
+[debug] [2025-05-24T13:10:59.390Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:10:59.390Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:10:59.391Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 [none]
+[debug] [2025-05-24T13:10:59.650Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 200
+[debug] [2025-05-24T13:10:59.650Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 {"projectId":"dryfruit-manager-460810","projectNumber":"249942554877","displayName":"dryfruit-manager","name":"projects/dryfruit-manager-460810","resources":{"hostingSite":"dryfruit-manager-460810"},"state":"ACTIVE","etag":"1_e53531bf-0918-4cf8-889d-126d280fe74b"}
+[debug] [2025-05-24T13:11:01.406Z] defaultcredentials: no credential available.
+[debug] [2025-05-24T13:11:01.407Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:01.407Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:01.407Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:11:01.407Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:11:01.408Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites pageToken=&pageSize=10
+[debug] [2025-05-24T13:11:01.881Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 200
+[debug] [2025-05-24T13:11:01.881Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites {"sites":[{"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}]}
+[debug] [2025-05-24T13:11:01.885Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:01.885Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:01.885Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:11:01.885Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:11:01.886Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 
+[debug] [2025-05-24T13:11:02.217Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 200
+[debug] [2025-05-24T13:11:02.217Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites {"sites":[{"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}]}
+[debug] [2025-05-24T13:11:02.217Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:02.217Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:02.217Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:11:02.218Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:11:02.218Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config [none]
+[debug] [2025-05-24T13:11:02.851Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config 200
+[debug] [2025-05-24T13:11:02.851Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config {"projectId":"dryfruit-manager-460810","storageBucket":"dryfruit-manager-460810.firebasestorage.app","apiKey":"AIzaSyDfbLzBUIVDGJq7RKaSmflVtYzMt4M1agA","authDomain":"dryfruit-manager-460810.firebaseapp.com","messagingSenderId":"249942554877"}
+[info] 
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+   The integration is known to work with Next.js version 12 - 15.0. You may encounter errors.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[debug] [2025-05-24T13:11:07.332Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:07.332Z] No OAuth tokens found
+[debug] [2025-05-24T13:11:07.333Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:11:07.333Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:11:07.333Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 [none]
+[debug] [2025-05-24T13:11:07.632Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 200
+[debug] [2025-05-24T13:11:07.633Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 {"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}
+[info]    ▲ Next.js 15.3.2
+
+[info] 
+
+[info]    Creating an optimized production build ...
+
+[info]  ✓ Compiled successfully in 7.0s
+
+[info]    Linting and checking validity of types ...
+
+[info] 
+Failed to compile.
+
+./src/app/api/auth/manager-login/route.ts
+32:23  Error: '_' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/api/auth/vendor-login/route.ts
+32:23  Error: '_' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/api/manager/dashboard-summary/route.ts
+32:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+138:9  Error: 'topSellingItemsArray' is never reassigned. Use 'const' instead.  prefer-const
+159:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/item-performance-data/route.ts
+90:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/products/[productId]/route.ts
+8:18  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+31:23  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+44:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+72:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/products/route.ts
+8:6  Error: 'ProductData' is defined but never used.  @typescript-eslint/no-unused-vars
+14:17  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+19:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+25:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+35:129  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+64:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/products-list/route.ts
+5:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/api/manager/returns/route.ts
+64:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/sales-transactions/route.ts
+15:11  Error: 'page' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+91:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/staff/[staffId]/route.ts
+28:23  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+33:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+52:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/staff/route.ts
+14:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+20:17  Error: 'password' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+24:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+55:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/staff-list/route.ts
+5:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+18:21  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/staff-performance-data/route.ts
+75:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/stock-events/route.ts
+38:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/manager/stock-status/route.ts
+4:8  Error: 'admin' is defined but never used.  @typescript-eslint/no-unused-vars
+16:27  Error: 'req' is defined but never used.  @typescript-eslint/no-unused-vars
+100:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/api/sales/update-status/route.ts
+26:11  Error: 'saleData' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/api/sales/vendor-history/route.ts
+26:9  Error: 'todayStr' is never reassigned. Use 'const' instead.  prefer-const
+88:9  Error: 'allTransactions' is never reassigned. Use 'const' instead.  prefer-const
+121:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/login/page.tsx
+51:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/dashboard/page.tsx
+6:52  Error: 'CardDescription' is defined but never used.  @typescript-eslint/no-unused-vars
+68:21  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/item-performance/page.tsx
+58:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/products/page.tsx
+21:15  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+22:15  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+52:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+104:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+147:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/returns-log/page.tsx
+12:43  Error: 'PackageX' is defined but never used.  @typescript-eslint/no-unused-vars
+71:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/sales-log/page.tsx
+62:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/staff/page.tsx
+19:15  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+48:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+97:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+116:23  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+141:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/manager/protected/staff-performance/page.tsx
+5:10  Error: 'Button' is defined but never used.  @typescript-eslint/no-unused-vars
+10:19  Error: 'UserCheck' is defined but never used.  @typescript-eslint/no-unused-vars
+71:21  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+100:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+205:48  Error: 'props' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/manager/protected/stock/page.tsx
+53:43  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+57:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+74:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+127:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/vendor/login/page.tsx
+18:19  Error: 'LogIn' is defined but never used.  @typescript-eslint/no-unused-vars
+52:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/app/vendor/returns/page.tsx
+57:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+71:6  Warning: React Hook useEffect has a missing dependency: 'fetchRecentSales'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+93:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+126:29  Error: `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.  react/no-unescaped-entities
+
+./src/app/vendor/sales-history/page.tsx
+13:30  Error: 'BarChart' is defined but never used.  @typescript-eslint/no-unused-vars
+70:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+84:6  Warning: React Hook useEffect has a missing dependency: 'fetchHistory'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/vendor/scan/page.tsx
+275:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+316:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+./src/lib/firebaseAdmin.ts
+4:35  Error: A `require()` style import is forbidden.  @typescript-eslint/no-require-imports
+12:19  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+
+[debug] [2025-05-24T13:11:24.291Z] Error: ENOENT: no such file or directory, open '/home/user/dryfruit-manager/.next/export-marker.json'
+[error] 
+[error] Error: An unexpected error has occurred.
+[debug] [2025-05-24T13:13:18.089Z] ----------------------------------------------------------------------
+[debug] [2025-05-24T13:13:18.091Z] Command:       /nix/store/rbdrkcs5kkwpalxcd7c6bnm33lk2955n-nodejs-20.19.0/bin/node /nix/store/x1y0l2xj62jgmz6csprhhqzibvdggdpk-firebase-tools-14.3.1/lib/node_modules/firebase-tools/lib/bin/firebase.js deploy
+[debug] [2025-05-24T13:13:18.092Z] CLI Version:   14.3.1
+[debug] [2025-05-24T13:13:18.092Z] Platform:      linux
+[debug] [2025-05-24T13:13:18.092Z] Node Version:  v20.19.0
+[debug] [2025-05-24T13:13:18.092Z] Time:          Sat May 24 2025 13:13:18 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-05-24T13:13:18.092Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-24T13:13:18.444Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:18.445Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:18.445Z] [iam] checking project dryfruit-manager-460810 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2025-05-24T13:13:18.446Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:18.447Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:18.447Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:18.447Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:18.448Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions [none]
+[debug] [2025-05-24T13:13:18.449Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions x-goog-quota-user=projects/dryfruit-manager-460810
+[debug] [2025-05-24T13:13:18.449Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2025-05-24T13:13:19.254Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions 200
+[debug] [2025-05-24T13:13:19.255Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/dryfruit-manager-460810:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2025-05-24T13:13:19.257Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:19.257Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:19.257Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:19.257Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:19.257Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 [none]
+[debug] [2025-05-24T13:13:19.506Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 200
+[debug] [2025-05-24T13:13:19.507Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810 {"projectId":"dryfruit-manager-460810","projectNumber":"249942554877","displayName":"dryfruit-manager","name":"projects/dryfruit-manager-460810","resources":{"hostingSite":"dryfruit-manager-460810"},"state":"ACTIVE","etag":"1_e53531bf-0918-4cf8-889d-126d280fe74b"}
+[debug] [2025-05-24T13:13:21.554Z] defaultcredentials: no credential available.
+[debug] [2025-05-24T13:13:21.554Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:21.554Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:21.554Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:21.555Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:21.555Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites pageToken=&pageSize=10
+[debug] [2025-05-24T13:13:21.918Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 200
+[debug] [2025-05-24T13:13:21.918Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites {"sites":[{"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}]}
+[debug] [2025-05-24T13:13:21.921Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:21.921Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:21.921Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:21.921Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:21.922Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 
+[debug] [2025-05-24T13:13:22.249Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites 200
+[debug] [2025-05-24T13:13:22.249Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites {"sites":[{"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}]}
+[debug] [2025-05-24T13:13:22.250Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:22.250Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:22.250Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:22.250Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:22.253Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config [none]
+[debug] [2025-05-24T13:13:22.646Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config 200
+[debug] [2025-05-24T13:13:22.646Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/dryfruit-manager-460810/webApps/-/config {"projectId":"dryfruit-manager-460810","storageBucket":"dryfruit-manager-460810.firebasestorage.app","apiKey":"AIzaSyDfbLzBUIVDGJq7RKaSmflVtYzMt4M1agA","authDomain":"dryfruit-manager-460810.firebaseapp.com","messagingSenderId":"249942554877"}
+[info] 
+   Thank you for trying our early preview of Next.js support on Firebase Hosting.
+   During the preview, support is best-effort and breaking changes can be expected. Proceed with caution.
+   The integration is known to work with Next.js version 12 - 15.0. You may encounter errors.
+
+   Documentation: https://firebase.google.com/docs/hosting/frameworks/nextjs
+   File a bug: https://github.com/firebase/firebase-tools/issues/new?template=bug_report.md
+   Submit a feature request: https://github.com/firebase/firebase-tools/issues/new?template=feature_request.md
+
+   We'd love to learn from you. Express your interest in helping us shape the future of Firebase Hosting: https://goo.gle/41enW5X
+
+[debug] [2025-05-24T13:13:28.350Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:28.352Z] No OAuth tokens found
+[debug] [2025-05-24T13:13:28.352Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-24T13:13:28.352Z] > authorizing via signed-in user (codingritesh36@gmail.com)
+[debug] [2025-05-24T13:13:28.353Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 [none]
+[debug] [2025-05-24T13:13:28.672Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 200
+[debug] [2025-05-24T13:13:28.675Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/dryfruit-manager-460810/sites/dryfruit-manager-460810 {"name":"projects/dryfruit-manager-460810/sites/dryfruit-manager-460810","defaultUrl":"https://dryfruit-manager-460810.web.app","type":"DEFAULT_SITE"}
+[info]    ▲ Next.js 15.3.2
+
+[info] 
+
+[info]    Creating an optimized production build ...
+
+[info]  ✓ Compiled successfully in 10.0s
+
+[info]    Skipping linting
+   Checking validity of types ...
+
+[info] Failed to compile.
+
+src/app/api/manager/products/[productId]/route.ts
+Type error: Route "src/app/api/manager/products/[productId]/route.ts" has an invalid "PUT" export:
+  Type "{ params: { productId: string; }; }" is not a valid type for the function's second argument.
+
+
+[info] Next.js build worker exited with code: 1 and signal: null
+
+[debug] [2025-05-24T13:13:59.586Z] Error: ENOENT: no such file or directory, open '/home/user/dryfruit-manager/.next/export-marker.json'
+[error] 
+[error] Error: An unexpected error has occurred.

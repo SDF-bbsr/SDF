@@ -1,0 +1,6 @@
+{
+  "firebase_hosting": {
+    "deploymentHostingUrl": "https://dryfruit-inventory-management.web.app"
+  },
+  "cloud_run_deploy": {}
+}
