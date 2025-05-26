@@ -18,29 +18,27 @@ import { toast as sonnerToast } from "sonner";
 import { Loader2, XCircle, CheckCircle2, ScanLine, LogOut, Camera } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 
-// Barcode Scanner Imports
 import {
   Html5Qrcode,
   Html5QrcodeSupportedFormats,
   Html5QrcodeScanType,
   QrcodeErrorCallback,
-  QrcodeSuccessCallback
+  QrcodeSuccessCallback,
+  Html5QrcodeResult,
+  // VideoConstraints, // Not using for now
 } from "html5-qrcode";
 
-// MODIFIED: Updated ScannedItemDetails interface
 interface ScannedItemDetails {
   articleNumber: string;
   articleName: string;
   posDescription: string;
-  metlerCode: string; // Assuming this is still a string
-  hsnCode: string;    // Assuming this is still a string
-  taxPercentage: number; // Changed to number
-  purchasePricePerKg: number; // Changed to number
-  sellingRatePerKg: number; // Changed to number
-  mrpPer100g: number; // Changed to number
+  metlerCode: string;
+  hsnCode: string;
+  taxPercentage: number;
+  purchasePricePerKg: number;
+  sellingRatePerKg: number;
+  mrpPer100g: number;
   remark?: string;
-
-  // Fields specific to the scan/sale context (added/calculated by lookup API)
   weightGrams: number;
   calculatedSellPrice: number;
 }
@@ -55,7 +53,7 @@ export default function VendorScanPage() {
   const [originalScannedBarcode, setOriginalScannedBarcode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isConfirmingSale, setIsConfirmingSale] = useState(false);
-  const [scannedItem, setScannedItem] = useState<ScannedItemDetails | null>(null); // Uses updated interface
+  const [scannedItem, setScannedItem] = useState<ScannedItemDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [isScannerActive, setIsScannerActive] = useState(false);
@@ -68,32 +66,31 @@ export default function VendorScanPage() {
     if (!user) {
       router.push('/vendor/login');
     } else {
-      barcodeInputRef.current?.focus();
+      if (!isScannerActive) {
+        barcodeInputRef.current?.focus();
+      }
     }
-  }, [user, router]);
+  }, [user, router, isScannerActive]);
 
-  const onScanSuccess: QrcodeSuccessCallback = (decodedText, decodedResult) => {
+  const onScanSuccess: QrcodeSuccessCallback = (decodedText, decodedResult: Html5QrcodeResult) => {
     console.log(`Barcode detected: ${decodedText}`, decodedResult);
+    console.log(`Detected format: ${decodedResult.result.format?.formatName}`);
     setBarcode(decodedText);
-    setIsScannerActive(false); 
-    sonnerToast.success("Barcode Scanned! Verify and submit.");
-    barcodeInputRef.current?.focus();
+    setIsScannerActive(false);
+    sonnerToast.success("Barcode Scanned! Looking up item...");
     setScannerError(null);
+    handleBarcodeSubmit(undefined, decodedText);
   };
 
   const onScanFailure: QrcodeErrorCallback = (errorMessage) => {
-    if (
-      !errorMessage.toLowerCase().includes("not found") &&
-      !errorMessage.toLowerCase().includes("insufficient") &&
-      !errorMessage.toLowerCase().includes("unable to query supported devices") &&
-      !errorMessage.toLowerCase().includes("noisgnificant")
-    ) {
-      console.warn(`Barcode scan error: ${errorMessage}`);
-    }
+    // console.warn(`Barcode scan failure: ${errorMessage}`);
   };
 
   useEffect(() => {
     if (isScannerActive) {
+      console.log("Attempting to start scanner...");
+      setScannerError(null); // Clear previous scanner errors
+
       const scannerElement = document.getElementById(BARCODE_SCANNER_REGION_ID);
       if (!scannerElement) {
         console.error(`Scanner region element with ID '${BARCODE_SCANNER_REGION_ID}' not found.`);
@@ -103,146 +100,164 @@ export default function VendorScanPage() {
       }
 
       if (html5QrCodeInstanceRef.current) {
-         console.warn("Scanner starting: Previous instance found, attempting to clear it first.");
-         Promise.resolve(html5QrCodeInstanceRef.current.clear())
-            .catch(e => console.error("Error clearing previous scanner instance before starting new one:", e))
-            .finally(() => {
-                html5QrCodeInstanceRef.current = null; 
-            });
+        console.log("Clearing previous scanner instance before starting new one.");
+        const oldInstance = html5QrCodeInstanceRef.current;
+        html5QrCodeInstanceRef.current = null;
+        Promise.resolve(oldInstance.clear())
+          .catch(e => console.error("Error clearing previous scanner instance:", e));
       }
 
+      console.log("Creating new Html5Qrcode instance.");
       const newHtml5QrCode = new Html5Qrcode(
         BARCODE_SCANNER_REGION_ID,
         {
-          verbose: false,
+          verbose: true,
           formatsToSupport: [
             Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.ITF,
-            Html5QrcodeSupportedFormats.CODE_39,
           ]
         }
       );
       html5QrCodeInstanceRef.current = newHtml5QrCode;
 
       const config = {
-        fps: 10,
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          const boxWidth = Math.floor(viewfinderWidth * 0.85);
-          const boxHeight = Math.floor(Math.min(viewfinderHeight * 0.30, boxWidth * 0.20));
-          return {
-            width: Math.max(280, boxWidth),
-            height: Math.max(100, boxHeight)
-          };
-        },
+        fps: 5,
+        qrbox: undefined, // <<<< START WITH FULL VIEWFINDER SCAN
+        // Example qrbox for later testing if full viewfinder works:
+        // qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+        //   const DYNAMIC_WIDTH_PERCENT = 0.85; 
+        //   const DYNAMIC_HEIGHT_PERCENT_OF_WIDTH = 0.35; 
+        //   const MIN_WIDTH = 280;
+        //   const MIN_HEIGHT = 150; 
+        //   let calculatedWidth = Math.floor(viewfinderWidth * DYNAMIC_WIDTH_PERCENT);
+        //   let calculatedHeight = Math.floor(calculatedWidth * DYNAMIC_HEIGHT_PERCENT_OF_WIDTH);
+        //   if (viewfinderHeight > viewfinderWidth) { 
+        //     calculatedHeight = Math.floor(viewfinderHeight * 0.30); 
+        //     calculatedWidth = Math.floor(calculatedHeight / DYNAMIC_HEIGHT_PERCENT_OF_WIDTH * 1.2); 
+        //     calculatedWidth = Math.min(calculatedWidth, Math.floor(viewfinderWidth * 0.95));
+        //   }
+        //   const finalWidth = Math.max(MIN_WIDTH, calculatedWidth);
+        //   const finalHeight = Math.max(MIN_HEIGHT, calculatedHeight);
+        //   console.log(`Scanner qrbox: viewfinder(${viewfinderWidth}x${viewfinderHeight}), finalBox(${finalWidth}x${finalHeight})`);
+        //   return { width: finalWidth, height: finalHeight };
+        // },
         rememberLastUsedCamera: true,
-        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA]
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+        // videoConstraints: undefined, // <<<< REMOVED for now to ensure camera starts
       };
 
+      console.log("Calling html5QrCode.start() with config:", config);
       newHtml5QrCode.start(
-        { facingMode: "environment" },
+        { facingMode: "environment" }, // <<<< REVERTED to simpler camera selection
         config,
         onScanSuccess,
         onScanFailure
-      ).catch((err) => {
+      ).then(() => {
+        console.log("Camera scanner started successfully.");
+      }).catch((err) => {
         const errorMsg = String(err);
         let friendlyMessage = `Failed to start camera: ${errorMsg}`;
         if (errorMsg.includes("NotFoundError") || errorMsg.includes("NotAllowedError") || errorMsg.includes("Permission denied")) {
             friendlyMessage = "Camera not found or permission denied. Please check browser settings and allow camera access.";
         } else if (errorMsg.includes("OverconstrainedError")) {
-            friendlyMessage = "Cannot access camera. It might be in use or resolution not supported.";
+            friendlyMessage = "Cannot access camera. It might be in use by another app, or the requested constraints (like resolution) are not supported by your device.";
+        } else if (errorMsg.includes("getUserMedia") && errorMsg.includes("is not a function")) {
+            friendlyMessage = "Camera access (getUserMedia) is not supported by this browser or device, or you are not on HTTPS.";
+        } else if (errorMsg.includes("DOMException")) {
+             friendlyMessage = `Camera start failed (DOMException): ${errorMsg}. This could be due to permissions, camera in use, or unsupported features.`;
         }
-        console.error("Scanner start error:", friendlyMessage, err);
+        console.error("Scanner start error full object:", err);
+        console.error("Scanner start error friendly message:", friendlyMessage);
         setScannerError(friendlyMessage);
         sonnerToast.error(friendlyMessage);
-        setIsScannerActive(false);
-        if (html5QrCodeInstanceRef.current) {
-            Promise.resolve(html5QrCodeInstanceRef.current.clear())
-                .catch(e => console.warn("Failed to clear scanner after start error:", e))
-                .finally(() => { html5QrCodeInstanceRef.current = null; });
+        setIsScannerActive(false); // Ensure scanner is marked as inactive on failure
+        // Attempt to clear the instance if it was created but failed to start
+        if (html5QrCodeInstanceRef.current === newHtml5QrCode) { // Check if it's the same instance
+            const instanceToClear = html5QrCodeInstanceRef.current;
+            html5QrCodeInstanceRef.current = null;
+            Promise.resolve(instanceToClear.clear())
+                .catch(e => console.warn("Failed to clear scanner after start error:", e));
         }
       });
 
-    } else { 
-      if (html5QrCodeInstanceRef.current && html5QrCodeInstanceRef.current.isScanning) {
+    } else { // isScannerActive is false
+      if (html5QrCodeInstanceRef.current) {
+        console.log("Scanner is inactive, stopping and clearing instance.");
         const scannerToStop = html5QrCodeInstanceRef.current;
+        html5QrCodeInstanceRef.current = null;
         scannerToStop.stop()
-          .then(() => { console.log("Scanner explicitly stopped via button/state change."); })
-          .catch((err) => { console.error("Failed to stop scanner explicitly:", err); })
-          .finally(() => {
+          .then(() => {
+            console.log("Scanner explicitly stopped.");
+            return scannerToStop.clear();
+          })
+          .then(() => {
+            console.log("Scanner cleared after stop.");
+          })
+          .catch((err) => {
+            console.error("Error during scanner stop/clear:", err);
             Promise.resolve(scannerToStop.clear())
-              .catch(e => console.warn("Failed to clear scanner after explicit stop:", e))
-              .finally(() => {
-                if(html5QrCodeInstanceRef.current === scannerToStop) {
-                    html5QrCodeInstanceRef.current = null;
-                }
-              });
+              .catch(e => console.error("Error clearing scanner after stop failure:", e));
           });
-      } else if (html5QrCodeInstanceRef.current && !html5QrCodeInstanceRef.current.isScanning) {
-        Promise.resolve(html5QrCodeInstanceRef.current.clear())
-            .catch(e => console.warn("Failed to clear non-scanning scanner instance:", e))
-            .finally(() => { html5QrCodeInstanceRef.current = null; });
       }
     }
 
     return () => {
-      const scannerToClean = html5QrCodeInstanceRef.current;
-      if (scannerToClean) {
-        html5QrCodeInstanceRef.current = null; 
-
-        if (scannerToClean.isScanning) {
-          scannerToClean.stop()
-            .then(() => {
-              console.log("Scanner stopped on cleanup (unmount/dependency change).");
-              Promise.resolve(scannerToClean.clear()) 
-                .catch(e => console.warn("Scanner clear failed (after successful stop during cleanup):", e));
-            })
-            .catch(err => {
-              console.error("Cleanup: Failed to stop scanner (unmount/dependency change)", err);
-              Promise.resolve(scannerToClean.clear()) 
-                .catch(e => console.warn("Scanner clear failed (after stop attempt failed during cleanup):", e));
-            });
-        } else {
-          Promise.resolve(scannerToClean.clear())
-            .catch(e => console.warn("Scanner clear failed (was not scanning during cleanup):", e));
-        }
+      if (html5QrCodeInstanceRef.current) {
+        console.log("useEffect cleanup: Stopping and clearing scanner.");
+        const scannerToClean = html5QrCodeInstanceRef.current;
+        html5QrCodeInstanceRef.current = null;
+        scannerToClean.stop()
+          .then(() => {
+            console.log("Scanner stopped on cleanup.");
+            return scannerToClean.clear();
+          })
+          .then(() => {
+            console.log("Scanner cleared on cleanup.");
+          })
+          .catch(err => {
+            console.error("Cleanup: Error stopping/clearing scanner", err);
+            Promise.resolve(scannerToClean.clear())
+              .catch(e => console.warn("Cleanup: Scanner clear failed after stop error:", e));
+          });
       }
     };
-  }, [isScannerActive]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isScannerActive]); // onScanSuccess, onScanFailure, handleBarcodeSubmit are stable
 
   const toggleCameraScanner = () => {
     if (isScannerActive) {
-      setIsScannerActive(false); 
+      setIsScannerActive(false);
     } else {
       setError(null);
-      setScannerError(null);
-      setIsScannerActive(true); 
+      setScannedItem(null);
+      setBarcode("");
+      setScannerError(null); // Clear previous scanner errors before trying again
+      setIsScannerActive(true);
     }
   };
 
+  // ... (parseBarcode, handleBarcodeSubmit, handleConfirmSale, handleLogout, and JSX remain the same)
   const parseBarcode = (fullBarcode: string): { articleNo: string; weightGrams: number } | null => {
     if (fullBarcode.length >= 21) {
         const articlePart = fullBarcode.substring(7, 16);
         const weightPart = fullBarcode.substring(16, 21);
         const articleNo = articlePart;
-        const weightGrams = parseInt(weightPart);
+        const weightGrams = parseInt(weightPart, 10);
         if (!isNaN(weightGrams) && articleNo) {
             return { articleNo, weightGrams };
         }
     }
-    setError("Invalid barcode format or length.");
-    sonnerToast.error("Invalid barcode format or length. Expected 21+ digits.");
+    // console.warn("Barcode does not match expected format/length for parsing articleNo and weight:", fullBarcode);
     return null;
   };
 
-  const handleBarcodeSubmit = async (e?: React.FormEvent<HTMLFormElement>) => {
+  const handleBarcodeSubmit = async (e?: React.FormEvent<HTMLFormElement>, scannedValue?: string) => {
     if (e) e.preventDefault();
-    const currentBarcodeValue = barcode.trim();
+    const currentBarcodeValue = (scannedValue || barcode).trim();
+
     if (!currentBarcodeValue) {
       setError("Barcode cannot be empty.");
+      sonnerToast.warning("Please enter or scan a barcode.");
       return;
     }
     setIsLoading(true);
@@ -254,13 +269,14 @@ export default function VendorScanPage() {
     const parsed = parseBarcode(currentBarcodeValue);
     if (!parsed) {
       setIsLoading(false);
-      barcodeInputRef.current?.focus();
+      setError("Invalid barcode format. Could not extract product details.");
+      sonnerToast.error("Invalid barcode. Please scan or type a valid product barcode.");
+      if (!scannedValue) barcodeInputRef.current?.focus();
       return;
     }
     const { articleNo, weightGrams } = parsed;
 
     try {
-      // Ensure /api/products/lookup returns data matching the new ScannedItemDetails interface
       const response = await fetch("/api/products/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -268,45 +284,38 @@ export default function VendorScanPage() {
       });
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to lookup item");
+        throw new Error(errorData.message || "Failed to lookup item. Product not found or invalid data.");
       }
-      const data: ScannedItemDetails = await response.json(); // Expects new structure
+      const data: ScannedItemDetails = await response.json();
       setScannedItem(data);
       setOriginalScannedBarcode(currentBarcodeValue);
       sonnerToast.success(`Item Found: ${data.articleName}`);
     } catch (err: any) {
-      setError(err.message || "An error occurred.");
+      setError(err.message || "An error occurred while looking up the item.");
       sonnerToast.error(err.message || "Error looking up item.");
       setScannedItem(null);
     } finally {
       setIsLoading(false);
-      barcodeInputRef.current?.focus();
+      if (!scannedValue) { 
+        barcodeInputRef.current?.focus();
+      }
     }
   };
 
   const handleConfirmSale = async () => {
     if (!scannedItem || !user?.id || !originalScannedBarcode) {
-      sonnerToast.error("No item scanned, user not identified, or original barcode missing.");
+      sonnerToast.error("No item scanned, user not identified, or original barcode missing. Cannot confirm sale.");
       return;
     }
     setIsConfirmingSale(true);
-    setIsLoading(false); // Should be false when confirming sale starts, true during the async operation
     setError(null);
 
-    // MODIFIED: Prepare payload with all product details, prefixed
     const salePayload = {
       barcodeScanned: originalScannedBarcode,
       staffId: user.id,
-      
-      // Transaction-specific fields (weight, calculated price)
       weightGrams: scannedItem.weightGrams,
       calculatedSellPrice: scannedItem.calculatedSellPrice,
-      
-      // Main product identifier for the transaction (maps to existing 'articleNo' field in salesTransaction)
-      articleNo: scannedItem.articleNumber, 
-      
-      // Snapshot of product data, prefixed
-      // This includes articleNumber from the product again, under a prefixed name
+      articleNo: scannedItem.articleNumber,
       product_articleNumber: scannedItem.articleNumber,
       product_articleName: scannedItem.articleName,
       product_posDescription: scannedItem.posDescription,
@@ -323,29 +332,30 @@ export default function VendorScanPage() {
       const response = await fetch("/api/sales/record", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(salePayload), // Send the more detailed payload
+        body: JSON.stringify(salePayload),
       });
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to record sale");
       }
       sonnerToast.success(
-        `Sale Confirmed: ${scannedItem.articleName} by ${user.name}`
+        `Sale Confirmed: ${scannedItem.articleName} by ${user.name || 'Staff'}`
       );
       setScannedItem(null);
       setOriginalScannedBarcode("");
       setBarcode("");
+      barcodeInputRef.current?.focus();
     } catch (err: any) {
       setError(err.message || "An error occurred during sale confirmation.");
       sonnerToast.error(err.message || "Error confirming sale.");
     } finally {
       setIsConfirmingSale(false);
-      barcodeInputRef.current?.focus();
     }
   };
 
   const handleLogout = () => {
     logout();
+    if (isScannerActive) setIsScannerActive(false);
     router.push('/');
   };
 
@@ -372,7 +382,7 @@ export default function VendorScanPage() {
             </Button>
           </div>
           <CardDescription>
-            Welcome, {user.name}! Scan or type the barcode.
+            Welcome, {user.name || 'Staff'}! Scan or type the barcode.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -389,8 +399,9 @@ export default function VendorScanPage() {
             </Button>
 
             {isScannerActive && (
-              <div className="my-2 p-2 border rounded-md bg-gray-100 shadow-inner">
-                <div id={BARCODE_SCANNER_REGION_ID} style={{ width: "100%", minHeight: "150px" }}></div>
+              <div className="my-2 p-2 border rounded-md bg-gray-100 shadow-inner relative">
+                <div id={BARCODE_SCANNER_REGION_ID} style={{ width: "100%", minHeight: "250px" }}>
+                </div>
               </div>
             )}
             {scannerError && (
@@ -401,13 +412,13 @@ export default function VendorScanPage() {
             )}
           </div>
 
-          <form onSubmit={handleBarcodeSubmit} className="space-y-2">
+          <form onSubmit={(e) => handleBarcodeSubmit(e)} className="space-y-2">
             <Label htmlFor="barcode-input">Barcode</Label>
             <Input
               id="barcode-input"
               ref={barcodeInputRef}
               type="text"
-              inputMode="numeric"
+              inputMode="text"
               placeholder="Scan or type barcode..."
               value={barcode}
               onChange={(e) => {
@@ -415,6 +426,7 @@ export default function VendorScanPage() {
                 if (scannedItem && e.target.value !== originalScannedBarcode) {
                     setScannedItem(null);
                     setOriginalScannedBarcode("");
+                    setError(null);
                 }
               }}
               disabled={isLoading || isConfirmingSale || isScannerActive}
@@ -425,7 +437,7 @@ export default function VendorScanPage() {
               className="w-full"
               disabled={isLoading || isConfirmingSale || !barcode.trim() || isScannerActive}
             >
-              {isLoading && !scannedItem ? (
+              {isLoading && !scannedItem && !isConfirmingSale ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Lookup Item
@@ -448,12 +460,9 @@ export default function VendorScanPage() {
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
                 <p><strong>Name:</strong> {scannedItem.articleName}</p>
-                <p><strong>Original Barcode:</strong> {originalScannedBarcode}</p>
-                {/* MODIFIED: Display articleNumber from the new interface */}
+                <p><strong>Scanned Barcode:</strong> {originalScannedBarcode}</p>
                 <p><strong>Article No:</strong> {scannedItem.articleNumber}</p>
                 <p><strong>Weight:</strong> {scannedItem.weightGrams}g</p>
-                {/* You can add more product details here if needed for display */}
-                {/* e.g., <p><strong>POS Desc:</strong> {scannedItem.posDescription}</p> */}
                 <p className="text-lg font-semibold">
                   <strong>Price:</strong> ₹{scannedItem.calculatedSellPrice.toFixed(2)}
                 </p>
@@ -475,10 +484,10 @@ export default function VendorScanPage() {
         </CardContent>
         <CardFooter>
           <div className="flex w-full gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/sales-history')}>
+            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/sales-history')} disabled={isScannerActive || isLoading || isConfirmingSale}>
               Daily Sales Dashboard
             </Button>
-            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/returns')}>
+            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/returns')} disabled={isScannerActive || isLoading || isConfirmingSale}>
               Manage Returns
             </Button>
           </div>

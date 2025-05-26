@@ -30,14 +30,16 @@ export default function VendorLoginPage() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    
+    const trimmedStaffId = staffId.trim(); // Trim whitespace from staffId
 
     try {
       const response = await fetch('/api/auth/vendor-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staffId, password }),
+        body: JSON.stringify({ staffId: trimmedStaffId, password }),
       });
-
+      
       const data = await response.json();
 
       if (!response.ok) {
