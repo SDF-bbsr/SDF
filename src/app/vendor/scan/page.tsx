@@ -1,7 +1,7 @@
 // src/app/vendor/scan/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,16 +17,7 @@ import {
 import { toast as sonnerToast } from "sonner";
 import { Loader2, XCircle, CheckCircle2, ScanLine, LogOut, Camera } from "lucide-react";
 import { useUser } from "@/context/UserContext";
-
-import {
-  Html5Qrcode,
-  Html5QrcodeSupportedFormats,
-  Html5QrcodeScanType,
-  QrcodeErrorCallback,
-  QrcodeSuccessCallback,
-  Html5QrcodeResult,
-  // VideoConstraints, // Not using for now
-} from "html5-qrcode";
+import Quagga, { QuaggaConfig, QuaggaDetectionResult } from 'quagga'; // Import QuaggaJS and types
 
 interface ScannedItemDetails {
   articleNumber: string;
@@ -43,7 +34,7 @@ interface ScannedItemDetails {
   calculatedSellPrice: number;
 }
 
-const BARCODE_SCANNER_REGION_ID = "barcode-scanner-live-region";
+const QUAGGA_SCANNER_REGION_ID = "quagga-scanner-live-region";
 
 export default function VendorScanPage() {
   const { user, logout } = useUser();
@@ -58,9 +49,13 @@ export default function VendorScanPage() {
 
   const [isScannerActive, setIsScannerActive] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
-  const html5QrCodeInstanceRef = useRef<Html5Qrcode | null>(null);
+  const [isQuaggaInitialized, setIsQuaggaInitialized] = useState(false); // Track init state
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
+
+  const firstScannerEffectRun = useRef(true);
+
 
   useEffect(() => {
     if (!user) {
@@ -72,157 +67,129 @@ export default function VendorScanPage() {
     }
   }, [user, router, isScannerActive]);
 
-  const onScanSuccess: QrcodeSuccessCallback = (decodedText, decodedResult: Html5QrcodeResult) => {
-    console.log(`Barcode detected: ${decodedText}`, decodedResult);
-    console.log(`Detected format: ${decodedResult.result.format?.formatName}`);
-    setBarcode(decodedText);
-    setIsScannerActive(false);
-    sonnerToast.success("Barcode Scanned! Looking up item...");
-    setScannerError(null);
-    handleBarcodeSubmit(undefined, decodedText);
-  };
+  // Type the result parameter
+  const onDetected = useCallback((result: QuaggaDetectionResult) => {
+    if (result && result.codeResult && result.codeResult.code) {
+      console.log("QuaggaJS Detected:", result.codeResult.code);
+      sonnerToast.success("Barcode Scanned! Looking up item...");
+      setBarcode(result.codeResult.code);
+      setIsScannerActive(false);
+      setScannerError(null);
+      // Assuming handleBarcodeSubmit is stable or its dependencies are in this useCallback's array
+      handleBarcodeSubmit(undefined, result.codeResult.code);
+    }
+  }, []); // Add dependencies for handleBarcodeSubmit if it uses props/state from outside
 
-  const onScanFailure: QrcodeErrorCallback = (errorMessage) => {
-    // console.warn(`Barcode scan failure: ${errorMessage}`);
-  };
+
+  const stopQuaggaScanner = useCallback(() => {
+    if (isQuaggaInitialized) { // Only stop if it was successfully initialized
+      console.log("Stopping QuaggaJS scanner...");
+      Quagga.offDetected(onDetected);
+      Quagga.offProcessed();
+      Quagga.stop();
+      setIsQuaggaInitialized(false); // Reset init state
+      console.log("QuaggaJS scanner stopped.");
+    }
+  }, [onDetected, isQuaggaInitialized]);
 
   useEffect(() => {
-    if (isScannerActive) {
-      console.log("Attempting to start scanner...");
-      setScannerError(null); // Clear previous scanner errors
+    return () => {
+        // Cleanup on component unmount
+        stopQuaggaScanner();
+    };
+  }, [stopQuaggaScanner]);
 
-      const scannerElement = document.getElementById(BARCODE_SCANNER_REGION_ID);
-      if (!scannerElement) {
-        console.error(`Scanner region element with ID '${BARCODE_SCANNER_REGION_ID}' not found.`);
-        setScannerError("Scanner UI element not found. Cannot start scanner.");
+
+  useEffect(() => {
+    if (firstScannerEffectRun.current) {
+      firstScannerEffectRun.current = false;
+      return;
+    }
+
+    if (isScannerActive) {
+      if (!scannerContainerRef.current) {
+        console.error("Scanner container div not found.");
+        setScannerError("Scanner UI element not ready.");
         setIsScannerActive(false);
         return;
       }
+      console.log("Attempting to start QuaggaJS scanner...");
+      setScannerError(null);
 
-      if (html5QrCodeInstanceRef.current) {
-        console.log("Clearing previous scanner instance before starting new one.");
-        const oldInstance = html5QrCodeInstanceRef.current;
-        html5QrCodeInstanceRef.current = null;
-        Promise.resolve(oldInstance.clear())
-          .catch(e => console.error("Error clearing previous scanner instance:", e));
-      }
-
-      console.log("Creating new Html5Qrcode instance.");
-      const newHtml5QrCode = new Html5Qrcode(
-        BARCODE_SCANNER_REGION_ID,
-        {
-          verbose: true,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.EAN_13,
-          ]
-        }
-      );
-      html5QrCodeInstanceRef.current = newHtml5QrCode;
-
-      const config = {
-        fps: 5,
-        qrbox: undefined, // <<<< START WITH FULL VIEWFINDER SCAN
-        // Example qrbox for later testing if full viewfinder works:
-        // qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-        //   const DYNAMIC_WIDTH_PERCENT = 0.85; 
-        //   const DYNAMIC_HEIGHT_PERCENT_OF_WIDTH = 0.35; 
-        //   const MIN_WIDTH = 280;
-        //   const MIN_HEIGHT = 150; 
-        //   let calculatedWidth = Math.floor(viewfinderWidth * DYNAMIC_WIDTH_PERCENT);
-        //   let calculatedHeight = Math.floor(calculatedWidth * DYNAMIC_HEIGHT_PERCENT_OF_WIDTH);
-        //   if (viewfinderHeight > viewfinderWidth) { 
-        //     calculatedHeight = Math.floor(viewfinderHeight * 0.30); 
-        //     calculatedWidth = Math.floor(calculatedHeight / DYNAMIC_HEIGHT_PERCENT_OF_WIDTH * 1.2); 
-        //     calculatedWidth = Math.min(calculatedWidth, Math.floor(viewfinderWidth * 0.95));
-        //   }
-        //   const finalWidth = Math.max(MIN_WIDTH, calculatedWidth);
-        //   const finalHeight = Math.max(MIN_HEIGHT, calculatedHeight);
-        //   console.log(`Scanner qrbox: viewfinder(${viewfinderWidth}x${viewfinderHeight}), finalBox(${finalWidth}x${finalHeight})`);
-        //   return { width: finalWidth, height: finalHeight };
-        // },
-        rememberLastUsedCamera: true,
-        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
-        // videoConstraints: undefined, // <<<< REMOVED for now to ensure camera starts
+      const quaggaConfig: QuaggaConfig = { // Use the imported QuaggaConfig type
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: scannerContainerRef.current,
+          constraints: {
+            // width: { min: 640, ideal: 1280, max: 1920 },
+            // height: { min: 480, ideal: 720, max: 1080 },
+            // aspectRatio: { ideal: 16/9 }, // You can try with or without this
+            facingMode: "environment",
+          },
+          area: { top: "20%", right: "5%", left: "5%", bottom: "20%" },
+          singleChannel: false
+        },
+        numOfWorkers: navigator.hardwareConcurrency > 1 ? navigator.hardwareConcurrency -1 : 1, // Leave one core for UI
+        locate: true,
+        frequency: 10,
+        decoder: {
+          readers: [ "code_128_reader", "ean_reader" ],
+          debug: {
+            drawBoundingBox: true,
+            showFrequency: true,
+            drawScanline: true,
+            showPattern: false, // Can be noisy
+          },
+          multiple: false,
+        },
+        locator: {
+          halfSample: true,
+          patchSize: "large", // Try 'large' or 'x-large' for Code 128
+          debug: { showCanvas: false }, // Keep others false unless deep debugging locator
+        },
       };
 
-      console.log("Calling html5QrCode.start() with config:", config);
-      newHtml5QrCode.start(
-        { facingMode: "environment" }, // <<<< REVERTED to simpler camera selection
-        config,
-        onScanSuccess,
-        onScanFailure
-      ).then(() => {
-        console.log("Camera scanner started successfully.");
-      }).catch((err) => {
-        const errorMsg = String(err);
-        let friendlyMessage = `Failed to start camera: ${errorMsg}`;
-        if (errorMsg.includes("NotFoundError") || errorMsg.includes("NotAllowedError") || errorMsg.includes("Permission denied")) {
-            friendlyMessage = "Camera not found or permission denied. Please check browser settings and allow camera access.";
-        } else if (errorMsg.includes("OverconstrainedError")) {
-            friendlyMessage = "Cannot access camera. It might be in use by another app, or the requested constraints (like resolution) are not supported by your device.";
-        } else if (errorMsg.includes("getUserMedia") && errorMsg.includes("is not a function")) {
-            friendlyMessage = "Camera access (getUserMedia) is not supported by this browser or device, or you are not on HTTPS.";
-        } else if (errorMsg.includes("DOMException")) {
-             friendlyMessage = `Camera start failed (DOMException): ${errorMsg}. This could be due to permissions, camera in use, or unsupported features.`;
+      // Type the err parameter for the init callback
+      Quagga.init(quaggaConfig, (err: any) => { // Using 'any' for err as defined in .d.ts
+        if (err) {
+          console.error("QuaggaJS initialization error:", err);
+          const errMsg = typeof err === 'string' ? err : (err.message || 'Unknown initialization error');
+          setScannerError(`Scanner init failed: ${errMsg}`);
+          sonnerToast.error(`Scanner init failed: ${errMsg}`);
+          setIsScannerActive(false);
+          setIsQuaggaInitialized(false);
+          return;
         }
-        console.error("Scanner start error full object:", err);
-        console.error("Scanner start error friendly message:", friendlyMessage);
-        setScannerError(friendlyMessage);
-        sonnerToast.error(friendlyMessage);
-        setIsScannerActive(false); // Ensure scanner is marked as inactive on failure
-        // Attempt to clear the instance if it was created but failed to start
-        if (html5QrCodeInstanceRef.current === newHtml5QrCode) { // Check if it's the same instance
-            const instanceToClear = html5QrCodeInstanceRef.current;
-            html5QrCodeInstanceRef.current = null;
-            Promise.resolve(instanceToClear.clear())
-                .catch(e => console.warn("Failed to clear scanner after start error:", e));
-        }
+        console.log("QuaggaJS initialized successfully. Starting scanner...");
+        setIsQuaggaInitialized(true); // Set init state
+        Quagga.start();
+        Quagga.onDetected(onDetected);
+        Quagga.onProcessed((result: any) => {
+            const drawingCtx = Quagga.canvas.ctx.overlay;
+            const drawingCanvas = Quagga.canvas.dom.overlay;
+            if (result && drawingCanvas && drawingCtx) {
+                if (result.boxes) {
+                    drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.width as any || "0"), parseInt(drawingCanvas.height as any || "0"));
+                    result.boxes.filter((box: any) => box !== result.box).forEach((box: any) => {
+                        Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: 'green', lineWidth: 2 });
+                    });
+                }
+                if (result.box) {
+                    Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: '#00F', lineWidth: 2 });
+                }
+                if (result.codeResult && result.codeResult.code) {
+                    Quagga.ImageDebug.drawPath(result.line, { x: 'x', y: 'y' }, drawingCtx, { color: 'red', lineWidth: 3 });
+                }
+            }
+        });
       });
-
-    } else { // isScannerActive is false
-      if (html5QrCodeInstanceRef.current) {
-        console.log("Scanner is inactive, stopping and clearing instance.");
-        const scannerToStop = html5QrCodeInstanceRef.current;
-        html5QrCodeInstanceRef.current = null;
-        scannerToStop.stop()
-          .then(() => {
-            console.log("Scanner explicitly stopped.");
-            return scannerToStop.clear();
-          })
-          .then(() => {
-            console.log("Scanner cleared after stop.");
-          })
-          .catch((err) => {
-            console.error("Error during scanner stop/clear:", err);
-            Promise.resolve(scannerToStop.clear())
-              .catch(e => console.error("Error clearing scanner after stop failure:", e));
-          });
-      }
+    } else {
+      stopQuaggaScanner();
     }
-
-    return () => {
-      if (html5QrCodeInstanceRef.current) {
-        console.log("useEffect cleanup: Stopping and clearing scanner.");
-        const scannerToClean = html5QrCodeInstanceRef.current;
-        html5QrCodeInstanceRef.current = null;
-        scannerToClean.stop()
-          .then(() => {
-            console.log("Scanner stopped on cleanup.");
-            return scannerToClean.clear();
-          })
-          .then(() => {
-            console.log("Scanner cleared on cleanup.");
-          })
-          .catch(err => {
-            console.error("Cleanup: Error stopping/clearing scanner", err);
-            Promise.resolve(scannerToClean.clear())
-              .catch(e => console.warn("Cleanup: Scanner clear failed after stop error:", e));
-          });
-      }
-    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isScannerActive]); // onScanSuccess, onScanFailure, handleBarcodeSubmit are stable
+  }, [isScannerActive, onDetected, stopQuaggaScanner]); // isQuaggaInitialized removed as it's managed internally by stop
+
 
   const toggleCameraScanner = () => {
     if (isScannerActive) {
@@ -231,12 +198,12 @@ export default function VendorScanPage() {
       setError(null);
       setScannedItem(null);
       setBarcode("");
-      setScannerError(null); // Clear previous scanner errors before trying again
+      setScannerError(null);
       setIsScannerActive(true);
     }
   };
 
-  // ... (parseBarcode, handleBarcodeSubmit, handleConfirmSale, handleLogout, and JSX remain the same)
+  // ... (rest of the component: parseBarcode, handleBarcodeSubmit, handleConfirmSale, handleLogout, JSX)
   const parseBarcode = (fullBarcode: string): { articleNo: string; weightGrams: number } | null => {
     if (fullBarcode.length >= 21) {
         const articlePart = fullBarcode.substring(7, 16);
@@ -247,7 +214,6 @@ export default function VendorScanPage() {
             return { articleNo, weightGrams };
         }
     }
-    // console.warn("Barcode does not match expected format/length for parsing articleNo and weight:", fullBarcode);
     return null;
   };
 
@@ -296,7 +262,7 @@ export default function VendorScanPage() {
       setScannedItem(null);
     } finally {
       setIsLoading(false);
-      if (!scannedValue) { 
+      if (!scannedValue) {
         barcodeInputRef.current?.focus();
       }
     }
@@ -369,130 +335,155 @@ export default function VendorScanPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-start p-4 md:p-12 bg-slate-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <ScanLine className="h-7 w-7 text-blue-600" />
-              Sale Entry
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              <LogOut className="mr-1 h-4 w-4" /> Logout
-            </Button>
-          </div>
-          <CardDescription>
-            Welcome, {user.name || 'Staff'}! Scan or type the barcode.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Button
-              type="button"
-              onClick={toggleCameraScanner}
-              variant="outline"
-              className="w-full"
-              disabled={isLoading || isConfirmingSale}
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              {isScannerActive ? "Stop Camera Scan" : "Scan with Camera"}
-            </Button>
-
-            {isScannerActive && (
-              <div className="my-2 p-2 border rounded-md bg-gray-100 shadow-inner relative">
-                <div id={BARCODE_SCANNER_REGION_ID} style={{ width: "100%", minHeight: "250px" }}>
-                </div>
-              </div>
-            )}
-            {scannerError && (
-              <div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 p-3 rounded-md">
-                <XCircle className="h-5 w-5 flex-shrink-0" />
-                <p>{scannerError}</p>
-              </div>
-            )}
-          </div>
-
-          <form onSubmit={(e) => handleBarcodeSubmit(e)} className="space-y-2">
-            <Label htmlFor="barcode-input">Barcode</Label>
-            <Input
-              id="barcode-input"
-              ref={barcodeInputRef}
-              type="text"
-              inputMode="text"
-              placeholder="Scan or type barcode..."
-              value={barcode}
-              onChange={(e) => {
-                setBarcode(e.target.value);
-                if (scannedItem && e.target.value !== originalScannedBarcode) {
-                    setScannedItem(null);
-                    setOriginalScannedBarcode("");
-                    setError(null);
-                }
-              }}
-              disabled={isLoading || isConfirmingSale || isScannerActive}
-              className="text-lg"
-            />
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading || isConfirmingSale || !barcode.trim() || isScannerActive}
-            >
-              {isLoading && !scannedItem && !isConfirmingSale ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Lookup Item
-            </Button>
-          </form>
-
-          {error && !(isLoading || isConfirmingSale) && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 p-3 rounded-md">
-              <XCircle className="h-5 w-5" />
-              <p>{error}</p>
+    <>
+      <style jsx global>{`
+        #${QUAGGA_SCANNER_REGION_ID} {
+          position: relative;
+          width: 100%;
+          min-height: 280px; /* Slightly increased min-height */
+          overflow: hidden;
+          background-color: #333; /* Dark background while camera loads */
+        }
+        #${QUAGGA_SCANNER_REGION_ID} video,
+        #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { /* Apply to drawingBuffer too */
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100% !important;
+          height: 100% !important;
+        }
+        #${QUAGGA_SCANNER_REGION_ID} video {
+           object-fit: cover; /* Or 'contain' if you prefer letterboxing */
+        }
+        #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer {
+          z-index: 10;
+        }
+      `}</style>
+      <main className="flex min-h-screen flex-col items-center justify-start p-4 md:p-12 bg-slate-50">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="flex items-center gap-2 text-2xl">
+                <ScanLine className="h-7 w-7 text-blue-600" />
+                Sale Entry
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="mr-1 h-4 w-4" /> Logout
+              </Button>
             </div>
-          )}
+            <CardDescription>
+              Welcome, {user.name || 'Staff'}! Scan or type the barcode.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Button
+                type="button"
+                onClick={toggleCameraScanner}
+                variant="outline"
+                className="w-full"
+                disabled={isLoading || isConfirmingSale}
+              >
+                <Camera className="mr-2 h-4 w-4" />
+                {isScannerActive ? "Stop Camera Scan" : "Scan with Camera"}
+              </Button>
 
-          {scannedItem && !(isLoading || isConfirmingSale) && (
-            <Card className="bg-green-50 border-green-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-700">
-                  <CheckCircle2 className="h-6 w-6"/> Item Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                <p><strong>Name:</strong> {scannedItem.articleName}</p>
-                <p><strong>Scanned Barcode:</strong> {originalScannedBarcode}</p>
-                <p><strong>Article No:</strong> {scannedItem.articleNumber}</p>
-                <p><strong>Weight:</strong> {scannedItem.weightGrams}g</p>
-                <p className="text-lg font-semibold">
-                  <strong>Price:</strong> ₹{scannedItem.calculatedSellPrice.toFixed(2)}
-                </p>
-              </CardContent>
-              <CardFooter>
-                <Button
-                  onClick={handleConfirmSale}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                  disabled={isConfirmingSale || isLoading}
-                >
-                  {isConfirmingSale ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Confirm Sale
-                </Button>
-              </CardFooter>
-            </Card>
-          )}
-        </CardContent>
-        <CardFooter>
-          <div className="flex w-full gap-2">
-            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/sales-history')} disabled={isScannerActive || isLoading || isConfirmingSale}>
-              Daily Sales Dashboard
-            </Button>
-            <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/returns')} disabled={isScannerActive || isLoading || isConfirmingSale}>
-              Manage Returns
-            </Button>
-          </div>
-        </CardFooter>
-      </Card>
-    </main>
+              {isScannerActive && (
+                <div className="my-2 p-1 border rounded-md bg-gray-200 shadow-inner">
+                  <div id={QUAGGA_SCANNER_REGION_ID} ref={scannerContainerRef}>
+                  </div>
+                </div>
+              )}
+              {scannerError && (
+                <div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 p-3 rounded-md">
+                  <XCircle className="h-5 w-5 flex-shrink-0" />
+                  <p>{scannerError}</p>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={(e) => handleBarcodeSubmit(e)} className="space-y-2">
+              <Label htmlFor="barcode-input">Barcode</Label>
+              <Input
+                id="barcode-input"
+                ref={barcodeInputRef}
+                type="text"
+                inputMode="text"
+                placeholder="Scan or type barcode..."
+                value={barcode}
+                onChange={(e) => {
+                  setBarcode(e.target.value);
+                  if (scannedItem && e.target.value !== originalScannedBarcode) {
+                      setScannedItem(null);
+                      setOriginalScannedBarcode("");
+                      setError(null);
+                  }
+                }}
+                disabled={isLoading || isConfirmingSale || isScannerActive}
+                className="text-lg"
+              />
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading || isConfirmingSale || !barcode.trim() || isScannerActive}
+              >
+                {isLoading && !scannedItem && !isConfirmingSale ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Lookup Item
+              </Button>
+            </form>
+
+            {error && !(isLoading || isConfirmingSale) && (
+              <div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 p-3 rounded-md">
+                <XCircle className="h-5 w-5" />
+                <p>{error}</p>
+              </div>
+            )}
+
+            {scannedItem && !(isLoading || isConfirmingSale) && (
+              <Card className="bg-green-50 border-green-200">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-700">
+                    <CheckCircle2 className="h-6 w-6"/> Item Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm">
+                  <p><strong>Name:</strong> {scannedItem.articleName}</p>
+                  <p><strong>Scanned Barcode:</strong> {originalScannedBarcode}</p>
+                  <p><strong>Article No:</strong> {scannedItem.articleNumber}</p>
+                  <p><strong>Weight:</strong> {scannedItem.weightGrams}g</p>
+                  <p className="text-lg font-semibold">
+                    <strong>Price:</strong> ₹{scannedItem.calculatedSellPrice.toFixed(2)}
+                  </p>
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    onClick={handleConfirmSale}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    disabled={isConfirmingSale || isLoading}
+                  >
+                    {isConfirmingSale ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Confirm Sale
+                  </Button>
+                </CardFooter>
+              </Card>
+            )}
+          </CardContent>
+          <CardFooter>
+            <div className="flex w-full gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/sales-history')} disabled={isScannerActive || isLoading || isConfirmingSale}>
+                Daily Sales Dashboard
+              </Button>
+              <Button variant="secondary" className="flex-1" onClick={() => router.push('/vendor/returns')} disabled={isScannerActive || isLoading || isConfirmingSale}>
+                Manage Returns
+              </Button>
+            </div>
+          </CardFooter>
+        </Card>
+      </main>
+    </>
   );
 }
