@@ -175,7 +175,6 @@ export default function ManagerSalesLogPage() {
     }
   };
 
-
   return (
     <>
       <Toaster richColors position="top-right" />
@@ -184,7 +183,54 @@ export default function ManagerSalesLogPage() {
         <div className="flex gap-2"> <Button onClick={() => setIsBulkAddModalOpen(true)} variant="outline"><UploadCloud className="mr-2 h-4 w-4" /> Bulk Add Sales</Button> <Button onClick={() => { const currentDefDates = getDefaultDateRange(); setExportFilters(prev => ({...prev, startDate: currentDefDates.startDate, endDate: currentDefDates.endDate })); setExportDataPreviewCount(null); setExportedBarcodesText(''); setActiveExportTab('excel'); setIsExportModalOpen(true); }} variant="outline"><Download className="mr-2 h-4 w-4" /> Export Data</Button> </div> <Button onClick={() => setViewMode(prev => prev === 'individual' ? 'daily' : 'individual')} variant="outline">{viewMode === 'individual' ? <CalendarDays className="mr-2 h-4 w-4" /> : <List className="mr-2 h-4 w-4" />}{viewMode === 'individual' ? 'View Daily Summary' : 'View Individual Transactions'}</Button>
       </div>
 
-      <Card className="mb-6"> {/* ... (Filter Card - no change) ... */} <CardHeader><CardTitle className="flex items-center gap-2"><Filter className="h-5 w-5" /> Filter Sales</CardTitle></CardHeader> <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end"> <div><Label htmlFor="startDate">Start Date</Label><Input type="date" id="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} /></div> <div><Label htmlFor="endDate">End Date</Label><Input type="date" id="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} /></div> <div><Label htmlFor="staffIdFilter">Staff</Label><Select value={filters.staffId || "all"} onValueChange={(value) => handleFilterChange('staffId', value === "all" ? "" : value)}><SelectTrigger id="staffIdFilter"><SelectValue placeholder="All Staff" /></SelectTrigger><SelectContent><SelectItem value="all">All Staff</SelectItem>{staffList.map(staff => (<SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>))}</SelectContent></Select></div> <div><Label htmlFor="statusFilter">Status</Label><Select value={filters.status || "all"} onValueChange={(value) => handleFilterChange('status', value === "all" ? "" : value)}><SelectTrigger id="statusFilter"><SelectValue placeholder="All Statuses" /></SelectTrigger><SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="SOLD">Sold</SelectItem><SelectItem value="RETURNED_PRE_BILLING">Returned Pre-Billing</SelectItem></SelectContent></Select></div> <Button onClick={applyFilters} disabled={isLoading} className="lg:col-start-5 self-end h-10">{isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}Apply Filters</Button> </CardContent> </Card>
+      <Card className="mb-4 max-w-screen-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" /> Filter Sales
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
+          <div>
+            <Label htmlFor="startDate">Start Date</Label>
+            <Input type="date" id="startDate" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="endDate">End Date</Label>
+            <Input type="date" id="endDate" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="staffIdFilter">Staff</Label>
+            <Select value={filters.staffId || "all"} onValueChange={(value) => handleFilterChange('staffId', value === "all" ? "" : value)}>
+              <SelectTrigger id="staffIdFilter">
+                <SelectValue placeholder="All Staff" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Staff</SelectItem>
+                {staffList.map(staff => (
+                  <SelectItem key={staff.id} value={staff.id}>{staff.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="statusFilter">Status</Label>
+            <Select value={filters.status || "all"} onValueChange={(value) => handleFilterChange('status', value === "all" ? "" : value)}>
+              <SelectTrigger id="statusFilter">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="SOLD">Sold</SelectItem>
+                <SelectItem value="RETURNED_PRE_BILLING">Returned Pre-Billing</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={applyFilters} disabled={isLoading} className="lg:col-start-5 self-end h-10">
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Filter className="mr-2 h-4 w-4" />}
+            Apply Filters
+          </Button>
+        </CardContent>
+      </Card>
       
       <Card>
         <CardHeader><CardTitle>{viewMode === 'individual' ? 'Individual Transaction List' : 'Daily Sales Summary'}</CardTitle><CardDescription>Displaying {viewMode === 'individual' ? 'transactions' : 'daily summaries'} based on current filters.</CardDescription></CardHeader>
@@ -200,13 +246,13 @@ export default function ManagerSalesLogPage() {
                         <TableRow>
                           <TableHead className="w-[170px] py-2 px-3">Timestamp</TableHead>
                           <TableHead className="py-2 px-3">Staff</TableHead>
-                          <TableHead className="py-2 px-3">Article No</TableHead>
-                          <TableHead className="py-2 px-3 hidden md:table-cell">Product Name</TableHead>
+                          <TableHead className="py-2 px-3 hidden md:table-cell">Article No</TableHead>
+                          <TableHead className="py-2 px-3 ">Product Name</TableHead>
                           <TableHead className="text-right py-2 px-3">Weight (g)</TableHead>
                           <TableHead className="text-right py-2 px-3">Price (₹)</TableHead>
-                          <TableHead className="py-2 px-3">Status</TableHead>
-                          <TableHead className="hidden lg:table-cell py-2 px-3">Barcode</TableHead>
-                          <TableHead className="text-center py-2 px-3 min-w-[100px]">Actions</TableHead> {/* New Actions Column */}
+                          <TableHead className="hidden md:table-cell py-2 px-3">Status</TableHead>
+                          <TableHead className="py-2 px-3">Barcode</TableHead>
+                          <TableHead className="text-center py-2 px-3 ">Actions</TableHead> {/* New Actions Column */}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -214,17 +260,17 @@ export default function ManagerSalesLogPage() {
                           <TableRow key={tx.id} className={`hover:bg-muted/50 ${tx._isProcessing ? 'opacity-50' : ''}`}>
                             <TableCell>{new Date(tx.timestamp).toLocaleString()}</TableCell>
                             <TableCell>{tx.staffId}</TableCell>
-                            <TableCell>{tx.articleNo}</TableCell>
-                            <TableCell className="hidden md:table-cell truncate max-w-[200px]">{tx.product_articleName || 'N/A'}</TableCell>
+                            <TableCell className="hidden md:table-cell">{tx.articleNo}</TableCell>
+                            <TableCell className="truncate max-w-[200px]">{tx.product_articleName || 'N/A'}</TableCell>
                             <TableCell className="text-right">{tx.weightGrams}</TableCell>
                             <TableCell className="text-right">{tx.calculatedSellPrice.toFixed(2)}</TableCell>
-                            <TableCell>{getStatusBadge(tx.status)}</TableCell>
-                            <TableCell className="hidden lg:table-cell truncate max-w-[150px]">{tx.barcodeScanned || 'N/A'}</TableCell>
+                            <TableCell className="hidden md:table-cell">{getStatusBadge(tx.status)}</TableCell>
+                            <TableCell className="truncate max-w-[150px]">{tx.barcodeScanned || 'N/A'}</TableCell>
                             <TableCell className="text-center space-x-1">
-                                <Button variant="outline" size="icon-xs" onClick={() => openEditSaleModal(tx)} title="Edit Sale Status" disabled={tx._isProcessing || isSubmitting}>
+                                <Button variant="outline" size="sm" onClick={() => openEditSaleModal(tx)} title="Edit Sale Status" disabled={tx._isProcessing || isSubmitting}>
                                     {tx._isProcessing && editingSale?.id === tx.id ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Edit className="h-3.5 w-3.5" />}
                                 </Button>
-                                <Button variant="destructive" size="icon-xs" onClick={() => handleDeleteSale(tx)} title="Delete Sale" disabled={tx._isProcessing || isSubmitting}>
+                                <Button variant="destructive" size="sm" onClick={() => handleDeleteSale(tx)} title="Delete Sale" disabled={tx._isProcessing || isSubmitting}>
                                     {tx._isProcessing && !editingSale ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Trash2 className="h-3.5 w-3.5" />}
                                 </Button>
                             </TableCell>
