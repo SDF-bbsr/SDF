@@ -5,6 +5,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { UserProvider } from "@/context/UserContext"; // Import UserProvider
+import { GoogleAnalytics } from '@next/third-parties/google'
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -30,6 +31,7 @@ export default function RootLayout({
           {children}
         </UserProvider>
         <SonnerToaster />
+        <GoogleAnalytics gaId="G-983NZ6GQHB" />
       </body>
     </html>
   );
