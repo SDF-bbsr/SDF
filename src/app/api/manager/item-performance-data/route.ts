@@ -1,126 +1,116 @@
 // src/app/api/manager/item-performance-data/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
-import admin from 'firebase-admin'; // Keep for FieldPath if needed, but not for this specific change
+import admin from 'firebase-admin';
 
-interface ItemPerformance {
+// Interface for data from dailyProductSales collection
+interface DailyProductSaleDoc {
+  date: string;
+  productArticleNo: string;
+  productName: string; // Already denormalized here
+  totalQuantitySoldGrams: number;
+  totalSalesValue: number;
+  totalTransactions: number;
+}
+
+// Interface for the aggregated performance of a single item over the period
+interface AggregatedItemPerformance {
   articleNo: string;
-  articleName?: string; // Populated from salesTransaction directly
+  articleName: string;
   totalWeightSoldGrams: number;
   totalValueSold: number;
-  totalPackets: number;
+  totalPackets: number; // Sum of totalTransactions from dailyProductSales
 }
 
-interface ProductInfo { // For items from the master product list (e.g., zero sales)
-  articleNo: string;
-  articleName?: string;
+interface GrandTotals {
+  totalValueSold: number;
+  totalWeightSoldGrams: number;
+  totalPacketsSold: number;
 }
 
-interface FullItemPerformanceResponse {
-  soldItemsPerformance: ItemPerformance[];
-  grandTotals: {
-    totalValueSold: number;
-    totalWeightSoldGrams: number;
-  };
-  zeroSalesItems: ProductInfo[];
+// Response structure for the frontend
+interface ItemPerformanceApiResponse {
+  soldItemsPerformance: AggregatedItemPerformance[];
+  grandTotals: GrandTotals;
+  // zeroSalesItems: ProductInfo[]; // Removed as per request
 }
+
 
 export async function GET(req: NextRequest) {
-  console.log("API /api/manager/item-performance-data called");
+  console.log("API /api/manager/item-performance-data called (Optimized with dailyProductSales)");
   try {
     const { searchParams } = new URL(req.url);
-    const startDate = searchParams.get('startDate'); // YYYY-MM-DD
-    const endDate = searchParams.get('endDate');     // YYYY-MM-DD
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
     if (!startDate || !endDate) {
       return NextResponse.json({ message: 'Start date and end date are required.' }, { status: 400 });
     }
-    console.log(`Fetching item performance from: ${startDate}, to: ${endDate}`);
+    console.log(`Fetching item performance from dailyProductSales: ${startDate} to ${endDate}`);
 
-    // 1. Fetch and Aggregate Sales Data
-    const salesQuery = db.collection('salesTransactions')
-      .where('status', '==', 'SOLD')
-      .where('dateOfSale', '>=', startDate)
-      .where('dateOfSale', '<=', endDate);
+    // 1. Fetch all relevant dailyProductSales documents for the date range
+    const dailyProductSalesQuery = db.collection('dailyProductSales')
+      .where('date', '>=', startDate)
+      .where('date', '<=', endDate);
+    
+    const dailyProductSalesSnapshot = await dailyProductSalesQuery.get();
+    // READS: Number of (product*day) documents in the range.
+    // E.g., if 30 products sold each day for 7 days, this is ~210 reads.
+    console.log(`Fetched ${dailyProductSalesSnapshot.docs.length} dailyProductSales documents.`);
 
-    const salesSnapshot = await salesQuery.get();
-    console.log(`Query completed, fetched ${salesSnapshot.docs.length} sales documents.`);
+    // 2. Aggregate these daily stats in memory
+    const aggregatedPerformanceMap: { [articleNo: string]: AggregatedItemPerformance } = {};
+    let grandTotalValue = 0;
+    let grandTotalWeight = 0;
+    let grandTotalPackets = 0;
 
-    const itemPerformanceMap: { [articleNo: string]: ItemPerformance } = {};
-    let grandTotalValueSold = 0;
-    let grandTotalWeightSoldGrams = 0;
+    dailyProductSalesSnapshot.forEach(doc => {
+      const dailyData = doc.data() as DailyProductSaleDoc;
+      const { productArticleNo, productName, totalQuantitySoldGrams, totalSalesValue, totalTransactions } = dailyData;
 
-    salesSnapshot.forEach(doc => {
-      const data = doc.data();
-      const articleNo = data.articleNo as string; // or data.product_articleNumber
-      const articleNameFromTransaction = data.product_articleName as string; // Key change here
-      const weightGrams = data.weightGrams || 0;
-      const sellPrice = data.calculatedSellPrice || 0;
-
-      if (!itemPerformanceMap[articleNo]) {
-        itemPerformanceMap[articleNo] = {
-          articleNo,
-          articleName: articleNameFromTransaction || articleNo, // Use name from transaction, fallback to articleNo
+      if (!aggregatedPerformanceMap[productArticleNo]) {
+        aggregatedPerformanceMap[productArticleNo] = {
+          articleNo: productArticleNo,
+          articleName: productName || productArticleNo, // Fallback to articleNo if name somehow missing
           totalWeightSoldGrams: 0,
           totalValueSold: 0,
           totalPackets: 0,
         };
       }
-      itemPerformanceMap[articleNo].totalWeightSoldGrams += weightGrams;
-      itemPerformanceMap[articleNo].totalValueSold += sellPrice;
-      itemPerformanceMap[articleNo].totalPackets += 1;
-
-      grandTotalValueSold += sellPrice;
-      grandTotalWeightSoldGrams += weightGrams;
+      
+      aggregatedPerformanceMap[productArticleNo].totalWeightSoldGrams += totalQuantitySoldGrams || 0;
+      aggregatedPerformanceMap[productArticleNo].totalValueSold += totalSalesValue || 0;
+      aggregatedPerformanceMap[productArticleNo].totalPackets += totalTransactions || 0;
     });
 
-    let soldItemsPerformance = Object.values(itemPerformanceMap);
-    
-    // No longer need to fetch product names for SOLD items separately
-    // The articleName is already populated from the salesTransaction
+    let soldItemsPerformance = Object.values(aggregatedPerformanceMap);
 
+    // Calculate grand totals from the aggregated data
+    soldItemsPerformance.forEach(item => {
+        grandTotalValue += item.totalValueSold;
+        grandTotalWeight += item.totalWeightSoldGrams;
+        grandTotalPackets += item.totalPackets;
+    });
+
+    // Sort by total value sold descending
     soldItemsPerformance.sort((a, b) => b.totalValueSold - a.totalValueSold);
 
-    // 2. Fetch All Products and Identify Zero Sales Items
-    // This part still needs to query your master 'product' collection
-    const allProductsSnapshot = await db.collection('product').get();
-    const zeroSalesItems: ProductInfo[] = [];
-    
-    allProductsSnapshot.forEach(doc => {
-        const productData = doc.data();
-        // Assuming the document ID of your 'product' collection is the articleNo
-        const productArticleNo = doc.id; 
-        
-        // And your 'product' collection has an 'articleName' field
-        const masterProductArticleName = productData.articleName as string; 
-
-        if (!itemPerformanceMap[productArticleNo]) { // If not found in sold items map for the period
-            zeroSalesItems.push({
-                articleNo: productArticleNo,
-                articleName: masterProductArticleName || productArticleNo, // Fallback to articleNo if name is missing
-            });
-        }
-    });
-    zeroSalesItems.sort((a,b) => (a.articleName || a.articleNo).localeCompare(b.articleName || b.articleNo));
-
-
-    const responseData: FullItemPerformanceResponse = {
+    const responseData: ItemPerformanceApiResponse = {
       soldItemsPerformance,
       grandTotals: {
-        totalValueSold: parseFloat(grandTotalValueSold.toFixed(2)),
-        totalWeightSoldGrams: parseFloat(grandTotalWeightSoldGrams.toFixed(3)), // Or just keep as number
+        totalValueSold: parseFloat(grandTotalValue.toFixed(2)),
+        totalWeightSoldGrams: parseFloat(grandTotalWeight.toFixed(3)),
+        totalPacketsSold: grandTotalPackets,
       },
-      zeroSalesItems,
+      // zeroSalesItems: [], // Removed as per request
     };
 
     return NextResponse.json(responseData);
 
   } catch (error: any) {
     console.error("Error in /api/manager/item-performance-data:", error);
-    if (error.code === 9 || error.code === 'failed-precondition' || (error.message && error.message.toLowerCase().includes('index'))) {
-        console.error("Potential Firestore Index issue for item performance. Error details:", error.details);
-        return NextResponse.json({ message: 'Internal Server Error - Possible Firestore Index missing. Check server logs for a link to create it.', details: error.message }, { status: 500 });
-    }
+    // The query on dailyProductSales is simple (range on 'date'). 
+    // It should be efficient with the default single-field index on 'date'.
     return NextResponse.json({ message: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }

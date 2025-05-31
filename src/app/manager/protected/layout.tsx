@@ -1,11 +1,12 @@
+// src/app/manager/protected/layout.tsx
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import Link from 'next/link';
+import Link from 'next/link'
 import { useUser } from '@/context/UserContext';
 import { Button } from '@/components/ui/button';
-import { LogOut, TrendingUp, Package, Users, ShoppingBag, Archive, UserCog, ListOrdered, Warehouse, Menu, X } from 'lucide-react';
+import { LogOut, TrendingUp, Package, Users, ShoppingBag, Archive, UserCog, ListOrdered, Warehouse, Menu, X, Database, Target } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 
 interface ManagerLayoutProps {
@@ -47,9 +48,11 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
     if (path.endsWith('/returns-log')) return 'Returns Log';
     if (path.endsWith('/staff-performance')) return 'Staff Performance';
     if (path.endsWith('/item-performance')) return 'Item Performance';
+    if (path.endsWith('/target-incentive')) return 'Targets & Incentives';
+    if (path.endsWith('/stock')) return 'Stock Status';
     if (path.endsWith('/products')) return 'Product Management';
     if (path.endsWith('/staff')) return 'Staff Management';
-    if (path.endsWith('/stock')) return 'Stock Status';
+    if (path.endsWith('/data-updation')) return 'Data Updation';
     return 'Manager Area';
   };
 
@@ -109,6 +112,14 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
              <ListOrdered className="h-4 w-4" /> Item Performance
            </Link>
            <Link
+              href="/manager/protected/target-incentive"
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all ${
+                 isActive('/manager/protected/target-incentive') ? 'bg-muted text-primary' : 'text-muted-foreground hover:text-primary'
+              }`}
+           >
+             <Target  className="h-4 w-4" /> Target & Incentive
+           </Link>
+           <Link
               href="/manager/protected/stock"
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all ${
                  isActive('/manager/protected/stock') ? 'bg-muted text-primary' : 'text-muted-foreground hover:text-primary'
@@ -131,6 +142,14 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
              }`}
           >
              <UserCog className="h-4 w-4" /> Staff Management
+          </Link>
+          <Link
+             href="/manager/protected/data-updation"
+             className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-all ${
+                isActive('/manager/protected/data-updation') ? 'bg-muted text-primary' : 'text-muted-foreground hover:text-primary'
+             }`}
+          >
+             <Database className="h-4 w-4" /> Data Updation
           </Link>
         </nav>
       </aside>

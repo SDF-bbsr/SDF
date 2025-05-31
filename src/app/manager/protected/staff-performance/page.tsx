@@ -1,17 +1,17 @@
 // src/app/manager/protected/staff-performance/page.tsx
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"; // Added Table components
-import { Loader2, UserCheck, BarChart3, Percent, BadgeDollarSign, PackageCheck, TableIcon } from 'lucide-react'; // Added TableIcon
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Loader2, UserCheck, BarChart3, Percent, BadgeDollarSign, PackageCheck, TableIcon, Filter } from 'lucide-react'; // Added Filter
 import { toast as sonnerToast, Toaster } from 'sonner';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'; // Added ScrollArea for table
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 interface StaffMember {
   id: string;
@@ -36,58 +36,90 @@ interface StaffPerformanceData {
   dailySalesTrend: DailySalePoint[];
 }
 
-const getDefaultDateRange = () => {
-    const today = new Date();
-    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    return {
-        startDate: firstDayOfMonth.toISOString().split('T')[0],
-        endDate: lastDayOfMonth.toISOString().split('T')[0],
-    };
+type QuickPeriod = 'today' | 'last7d' | 'thisMonth' | 'custom';
+
+const IST_TIMEZONE_CLIENT = 'Asia/Kolkata';
+const getISODateStringForClient = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
+const getNowInClientIST = (): Date => new Date(new Date().toLocaleString("en-US", { timeZone: IST_TIMEZONE_CLIENT }));
+
 
 export default function StaffPerformancePage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
-  const [dateRange, setDateRange] = useState(getDefaultDateRange());
+  
+  const [activeQuickPeriod, setActiveQuickPeriod] = useState<QuickPeriod>('today');
+  const [customDateRange, setCustomDateRange] = useState({ startDate: '', endDate: '' });
+  
   const [performanceData, setPerformanceData] = useState<StaffPerformanceData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false); // Combined loading state
   const [isLoadingStaff, setIsLoadingStaff] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Calculate effective date range based on quick period or custom input
+  const effectiveDateRange = useMemo(() => {
+    const nowIST = getNowInClientIST();
+    if (activeQuickPeriod === 'custom') {
+      return { startDate: customDateRange.startDate, endDate: customDateRange.endDate };
+    }
+    let sDate = nowIST;
+    let eDate = nowIST;
+    switch(activeQuickPeriod) {
+      case 'today':
+        break;
+      case 'last7d':
+        sDate = new Date(nowIST);
+        sDate.setDate(nowIST.getDate() - 6);
+        break;
+      case 'thisMonth':
+        sDate = new Date(nowIST.getFullYear(), nowIST.getMonth(), 1);
+        eDate = new Date(nowIST.getFullYear(), nowIST.getMonth() + 1, 0);
+        break;
+    }
+    return { 
+      startDate: getISODateStringForClient(sDate), 
+      endDate: getISODateStringForClient(eDate) 
+    };
+  }, [activeQuickPeriod, customDateRange]);
+
 
   useEffect(() => {
     const fetchStaff = async () => {
       setIsLoadingStaff(true);
       try {
-        const response = await fetch('/api/manager/staff-list'); // Ensure this API returns {id, name, role}
+        const response = await fetch('/api/manager/staff-list');
         if (!response.ok) throw new Error('Failed to fetch staff list');
         const data: StaffMember[] = await response.json();
         const vendors = data.filter(staff => staff.role === 'vendor');
         setStaffList(vendors);
-        if (vendors.length > 0) {
+        if (vendors.length > 0 && !selectedStaffId) { // Set selectedStaffId only if not already set
           setSelectedStaffId(vendors[0].id);
         }
-      } catch (err: any) {
-        sonnerToast.error("Error fetching staff: " + err.message);
-      } finally {
-        setIsLoadingStaff(false);
-      }
+      } catch (err: any) { sonnerToast.error("Error fetching staff: " + err.message); } 
+      finally { setIsLoadingStaff(false); }
     };
     fetchStaff();
-  }, []);
+  }, [selectedStaffId]); // Re-run if selectedStaffId changes to ensure it's valid, though initial set is main goal
 
   const fetchPerformanceData = useCallback(async () => {
-    if (!selectedStaffId || !dateRange.startDate || !dateRange.endDate) {
-      setPerformanceData(null);
+    if (!selectedStaffId || !effectiveDateRange.startDate || !effectiveDateRange.endDate) {
+      setPerformanceData(null); // Clear data if inputs are invalid
+      if (selectedStaffId && (!effectiveDateRange.startDate || !effectiveDateRange.endDate) && activeQuickPeriod === 'custom') {
+        // Only show warning for custom if dates are missing, not for initial load of quick periods
+        // sonnerToast.warning("Please select valid start and end dates for custom range.");
+      }
       return;
     }
-    setIsLoading(true);
-    setError(null);
+    setIsLoadingData(true); setError(null);
     try {
       const queryParams = new URLSearchParams({
         staffId: selectedStaffId,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        startDate: effectiveDateRange.startDate,
+        endDate: effectiveDateRange.endDate,
       });
       const response = await fetch(`/api/manager/staff-performance-data?${queryParams.toString()}`);
       if (!response.ok) {
@@ -96,25 +128,39 @@ export default function StaffPerformancePage() {
       }
       const data: StaffPerformanceData = await response.json();
       setPerformanceData(data);
-    } catch (err: any) {
-      setError(err.message);
-      setPerformanceData(null);
-      sonnerToast.error(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedStaffId, dateRange]);
+    } catch (err: any) { setError(err.message); setPerformanceData(null); sonnerToast.error("Fetch error: " + err.message); } 
+    finally { setIsLoadingData(false); }
+  }, [selectedStaffId, effectiveDateRange]);
 
   useEffect(() => {
-    if (selectedStaffId && dateRange.startDate && dateRange.endDate) {
+    // Fetch data when selectedStaffId or effectiveDateRange (derived from activeQuickPeriod/customDateRange) changes
+    if (selectedStaffId && effectiveDateRange.startDate && effectiveDateRange.endDate) {
       fetchPerformanceData();
+    } else if (selectedStaffId) { // Staff selected but dates might be invalid for custom
+        setPerformanceData(null); // Clear previous data
     }
-  }, [selectedStaffId, dateRange, fetchPerformanceData]);
+  }, [selectedStaffId, effectiveDateRange, fetchPerformanceData]);
 
 
-  const handleDateChange = (field: 'startDate' | 'endDate', value: string) => {
-    setDateRange(prev => ({ ...prev, [field]: value }));
+  const handleApplyFilters = () => { // Explicit button to apply filters
+    if (activeQuickPeriod === 'custom' && (!customDateRange.startDate || !customDateRange.endDate)) {
+        sonnerToast.warning("For custom range, please provide both start and end dates.");
+        return;
+    }
+    if (customDateRange.startDate && customDateRange.endDate && new Date(customDateRange.startDate) > new Date(customDateRange.endDate)) {
+        sonnerToast.error("Start date cannot be after end date.");
+        return;
+    }
+    // fetchPerformanceData will be triggered by the useEffect watching effectiveDateRange
+    // No direct call here, just ensure states are set correctly for the useEffect.
+    // This function might not be strictly necessary if useEffect handles all changes.
+    // However, an explicit apply button can be good UX for custom ranges.
+    // For quick periods, selection itself triggers the change via useEffect.
+    if (selectedStaffId && effectiveDateRange.startDate && effectiveDateRange.endDate) {
+        fetchPerformanceData();
+    }
   };
+
 
   const StatCard = ({ title, value, icon: Icon, unit }: { title: string; value: string | number; icon: React.ElementType, unit?: string }) => (
     <Card>
@@ -123,19 +169,21 @@ export default function StaffPerformancePage() {
         <Icon className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value} {unit || ''}</div>
+        <div className="text-2xl font-bold">{value}{unit ? ` ${unit}`: ''}</div>
       </CardContent>
     </Card>
   );
+
+  const todayForInputMax = useMemo(() => getISODateStringForClient(getNowInClientIST()), []);
 
   return (
     <>
       <Toaster richColors position="top-right" />
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Select Staff and Date Range</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Filter className="h-5 w-5" /> Select Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
           <div>
             <Label htmlFor="staffSelect">Staff Member (Vendor)</Label>
             {isLoadingStaff ? <Loader2 className="h-5 w-5 animate-spin mt-2" /> : (
@@ -151,94 +199,100 @@ export default function StaffPerformancePage() {
               </Select>
             )}
           </div>
-          <div>
-            <Label htmlFor="startDate">Start Date</Label>
-            <Input type="date" id="startDate" value={dateRange.startDate} onChange={(e) => handleDateChange('startDate', e.target.value)} />
+          <div className="lg:col-span-1">
+            <Label htmlFor="quickPeriod">Period</Label>
+            <Select value={activeQuickPeriod} onValueChange={(value) => setActiveQuickPeriod(value as QuickPeriod)}>
+                <SelectTrigger id="quickPeriod"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="last7d">Last 7 Days</SelectItem>
+                    <SelectItem value="thisMonth">This Month</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
+                </SelectContent>
+            </Select>
           </div>
-          <div>
-            <Label htmlFor="endDate">End Date</Label>
-            <Input type="date" id="endDate" value={dateRange.endDate} onChange={(e) => handleDateChange('endDate', e.target.value)} />
-          </div>
+          {activeQuickPeriod === 'custom' && (
+            <>
+              <div>
+                <Label htmlFor="customStartDate">Start Date</Label>
+                <Input type="date" id="customStartDate" value={customDateRange.startDate} onChange={(e) => setCustomDateRange(prev => ({...prev, startDate: e.target.value}))} max={todayForInputMax}/>
+              </div>
+              <div>
+                <Label htmlFor="customEndDate">End Date</Label>
+                <Input type="date" id="customEndDate" value={customDateRange.endDate} onChange={(e) => setCustomDateRange(prev => ({...prev, endDate: e.target.value}))} max={todayForInputMax}/>
+              </div>
+            </>
+          )}
+          {/* Apply button is more relevant for custom range if quick periods auto-update */}
+          {activeQuickPeriod === 'custom' && (
+            <Button onClick={handleApplyFilters} disabled={isLoadingData || !customDateRange.startDate || !customDateRange.endDate} className="h-10">
+                {isLoadingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserCheck className="mr-2 h-4 w-4" />}
+                Apply Custom Range
+            </Button>
+          )}
         </CardContent>
       </Card>
 
-      {isLoading && <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2">Loading performance data...</p></div>}
-      {error && !isLoading && <p className="text-destructive text-center py-10">Error: {error}</p>}
+      {isLoadingData && <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <p className="ml-2">Loading performance data...</p></div>}
+      {error && !isLoadingData && <p className="text-destructive text-center py-10">Error: {error}</p>}
       
-      {!isLoading && !error && performanceData && (
+      {!isLoadingData && !error && performanceData && selectedStaffId && (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
-            <StatCard title="Total Sales Value" value={`₹${performanceData.summary.totalSalesValue.toFixed(2)}`} icon={BadgeDollarSign} />
-            <StatCard title="Total Packets Sold" value={performanceData.summary.totalPackets} icon={PackageCheck} />
-            <StatCard title="Avg. Value per Packet" value={`₹${performanceData.summary.averagePacketValue.toFixed(2)}`} icon={Percent} />
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <StatCard title="Total Sales Value" value={`₹${(performanceData.summary.totalSalesValue || 0).toFixed(2)}`} icon={BadgeDollarSign} />
+            <StatCard title="Total Packets Sold" value={performanceData.summary.totalPackets || 0} icon={PackageCheck} />
+            <StatCard title="Avg. Value per Packet" value={`₹${(performanceData.summary.averagePacketValue || 0).toFixed(2)}`} icon={Percent} />
           </div>
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5"/> Daily Sales Trend (Chart)</CardTitle>
+              <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5"/> Daily Sales Trend</CardTitle>
               <CardDescription>
-                Sales performance for {staffList.find(s => s.id === selectedStaffId)?.name || 'Selected Staff'} from {new Date(dateRange.startDate  + 'T00:00:00').toLocaleDateString()} to {new Date(dateRange.endDate + 'T00:00:00').toLocaleDateString()}.
+                Performance for {staffList.find(s => s.id === selectedStaffId)?.name || 'Selected Staff'} from {effectiveDateRange.startDate} to {effectiveDateRange.endDate}.
               </CardDescription>
             </CardHeader>
             <CardContent className="h-[350px] pt-4">
               {performanceData.dailySalesTrend.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={performanceData.dailySalesTrend} margin={{ top: 5, right: 30, left: 5, bottom: 25 }}> {/* Adjusted margins */}
+                  <LineChart data={performanceData.dailySalesTrend} margin={{ top: 5, right: 30, left: 5, bottom: 35 }}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis 
                         dataKey="date" 
-                        tickFormatter={(dateStr) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} // DD-Mon format
-                        angle={-45}
-                        textAnchor="end"
-                        height={60} // Increased height for angled labels
-                        interval={Math.max(0, Math.floor(performanceData.dailySalesTrend.length / 15) -1)} // Show fewer ticks if many data points
+                        tickFormatter={(dateStr) => new Date(dateStr + 'T00:00:00Z').toLocaleDateString('en-GB', {timeZone: 'UTC', day: '2-digit', month: 'short' })}
+                        angle={-45} textAnchor="end" height={70} interval={'preserveStartEnd'} 
                     />
-                    <YAxis yAxisId="left" label={{ value: 'Sales (₹)', angle: -90, position: 'insideLeft', offset: 15, style: {textAnchor: 'middle'} }} />
-                    <YAxis yAxisId="right" orientation="right" label={{ value: 'Packets', angle: 90, position: 'insideRight', offset: 15, style: {textAnchor: 'middle'} }} />
+                    <YAxis yAxisId="left" orientation="left" stroke="#8884d8" label={{ value: 'Sales (₹)', angle: -90, position: 'insideLeft', offset: 0, style: {textAnchor: 'middle'} }} tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(0)}k` : String(value)} />
+                    <YAxis yAxisId="right" orientation="right" stroke="#82ca9d" label={{ value: 'Packets', angle: 90, position: 'insideRight', offset: 0, style: {textAnchor: 'middle'} }} />
                     <Tooltip
-                      formatter={(value, name) => {
-                        if (name === 'Total Sales') return [`₹${Number(value).toFixed(2)}`, name];
+                      formatter={(value: number, name: string) => {
+                        if (name === 'Total Sales (₹)') return [`₹${Number(value).toFixed(2)}`, name];
                         if (name === 'Packets Sold') return [value, name];
-                        return [value, name];
+                        return [String(value), name];
                       }}
-                      labelFormatter={(label) => new Date(label + 'T00:00:00').toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      labelFormatter={(label) => new Date(label + 'T00:00:00Z').toLocaleDateString('en-GB', {timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })}
                     />
-                    <Legend wrapperStyle={{paddingTop: '20px'}} />
+                    <Legend wrapperStyle={{paddingTop: '25px'}} />
                     <Line yAxisId="left" type="monotone" dataKey="totalSales" stroke="#8884d8" name="Total Sales (₹)" activeDot={{ r: 6 }} dot={{r:3}} />
                     <Line yAxisId="right" type="monotone" dataKey="packetCount" stroke="#82ca9d" name="Packets Sold" activeDot={{ r: 6 }} dot={{r:3}} />
                   </LineChart>
                 </ResponsiveContainer>
-              ) : (
-                <p className="text-center text-muted-foreground h-full flex items-center justify-center">No sales data for this period to display trend.</p>
-              )}
+              ) : ( <p className="text-center text-muted-foreground h-full flex items-center justify-center">No sales data for this period to display trend.</p> )}
             </CardContent>
           </Card>
 
-          {/* Daily Sales Data Table */}
           {performanceData.dailySalesTrend.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><TableIcon className="h-5 w-5"/> Daily Sales Data</CardTitle>
-                <CardDescription>Tabular view of the daily sales trend data shown in the chart above.</CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><TableIcon className="h-5 w-5"/> Daily Sales Data</CardTitle></CardHeader>
               <CardContent>
                 <ScrollArea className="w-full whitespace-nowrap rounded-md border max-h-[400px]">
-                  <Table className="text-sm">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="py-2 px-3">Date</TableHead>
-                        <TableHead className="text-right py-2 px-3">Total Sales (₹)</TableHead>
-                        <TableHead className="text-right py-2 px-3">Packets Sold</TableHead>
-                      </TableRow>
-                    </TableHeader>
+                  <Table className="text-xs">
+                    <TableHeader><TableRow><TableHead className="py-2 px-3">Date</TableHead><TableHead className="text-right py-2 px-3">Total Sales (₹)</TableHead><TableHead className="text-right py-2 px-3">Packets Sold</TableHead></TableRow></TableHeader>
                     <TableBody>
                       {performanceData.dailySalesTrend.map((dayData) => (
                         <TableRow key={dayData.date} className="hover:bg-muted/50">
-                          <TableCell className="font-medium">
-                            {new Date(dayData.date + 'T00:00:00').toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}
-                          </TableCell>
-                          <TableCell className="text-right">₹{dayData.totalSales.toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{dayData.packetCount}</TableCell>
+                          <TableCell className="font-medium">{new Date(dayData.date + 'T00:00:00Z').toLocaleDateString('en-GB', {timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' })}</TableCell>
+                          <TableCell className="text-right">₹{(dayData.totalSales || 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{dayData.packetCount || 0}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -250,14 +304,14 @@ export default function StaffPerformancePage() {
           )}
         </div>
       )}
-       {!isLoading && !error && !performanceData && selectedStaffId && (
-         <p className="text-center text-muted-foreground py-10">Select/confirm staff and date range to view performance, or no data found for the current selection.</p>
+       {!isLoadingData && !error && !performanceData && selectedStaffId && (
+         <p className="text-center text-muted-foreground py-10">No performance data found for {staffList.find(s => s.id === selectedStaffId)?.name || 'the selected staff'} in the chosen period.</p>
        )}
-       {!isLoading && !error && !performanceData && !selectedStaffId && !isLoadingStaff && staffList.length > 0 && (
+       {!isLoadingData && !error && !performanceData && !selectedStaffId && !isLoadingStaff && staffList.length > 0 && (
          <p className="text-center text-muted-foreground py-10">Please select a staff member to view their performance.</p>
        )}
-       {!isLoading && !error && !performanceData && !selectedStaffId && !isLoadingStaff && staffList.length === 0 && (
-         <p className="text-center text-muted-foreground py-10">No vendor staff found to display performance. Please add vendor staff first.</p>
+       {!isLoadingData && !error && !performanceData && !selectedStaffId && !isLoadingStaff && staffList.length === 0 && (
+         <p className="text-center text-muted-foreground py-10">No vendor staff found. Please add vendor staff via the Staff Management page.</p>
        )}
     </>
   );

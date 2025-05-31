@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; // For bulk add
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog"; // For bulk add dialog
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -31,9 +31,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"; // For displaying bulk processed items
-import { toast as sonnerToast, Toaster } from "sonner"; // Added Toaster
-import { Loader2, XCircle, CheckCircle2, ScanLine, LogOut, Camera, UploadCloud, AlertTriangle } from "lucide-react"; // Added UploadCloud, AlertTriangle
+} from "@/components/ui/table";
+import { toast as sonnerToast, Toaster } from "sonner";
+import { Loader2, XCircle, CheckCircle2, ScanLine, LogOut, Camera, UploadCloud, AlertTriangle } from "lucide-react";
 import { useUser } from "@/context/UserContext";
 import Quagga, { QuaggaConfig, QuaggaDetectionResult } from 'quagga';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -52,29 +52,26 @@ interface ScannedItemDetails {
   remark?: string;
   weightGrams: number;
   calculatedSellPrice: number;
-  originalBarcode?: string; // To keep track of which barcode resulted in this item
+  originalBarcode?: string;
 }
 
-// For items processed in bulk, before final confirmation
 interface BulkProcessedItem extends ScannedItemDetails {
-  originalBarcode: string; // Ensure original barcode is always present
+  originalBarcode: string;
 }
 
 const QUAGGA_SCANNER_REGION_ID = "quagga-scanner-live-region";
-// Barcode parsing constants (assuming they are defined globally or copied here)
 const BARCODE_PREFIX = "2110000";
 const ARTICLE_NO_IN_BARCODE_LENGTH = 9;
 const WEIGHT_GRAMS_IN_BARCODE_LENGTH = 5;
-// const CHECK_DIGIT_PLACEHOLDER = "1"; // Not used in parsing, but for construction if needed
 
 export default function VendorScanPage() {
   const { user, logout } = useUser();
   const router = useRouter();
 
   const [barcode, setBarcode] = useState("");
-  const [originalScannedBarcode, setOriginalScannedBarcode] = useState(""); // For single scan
-  const [isLoading, setIsLoading] = useState(false); // For single lookup
-  const [isConfirmingSale, setIsConfirmingSale] = useState(false); // For single confirm
+  const [originalScannedBarcode, setOriginalScannedBarcode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConfirmingSale, setIsConfirmingSale] = useState(false);
   const [scannedItem, setScannedItem] = useState<ScannedItemDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,16 +83,15 @@ export default function VendorScanPage() {
   const scannerContainerRef = useRef<HTMLDivElement>(null);
   const firstScannerEffectRun = useRef(true);
 
-  // --- State for Bulk Add ---
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
   const [bulkBarcodeInput, setBulkBarcodeInput] = useState("");
   const [bulkProcessedItems, setBulkProcessedItems] = useState<BulkProcessedItem[]>([]);
   const [bulkInvalidBarcodes, setBulkInvalidBarcodes] = useState<string[]>([]);
-  const [isProcessingBulk, setIsProcessingBulk] = useState(false); // For "Process Barcodes" button
-  const [isConfirmingBulkSale, setIsConfirmingBulkSale] = useState(false); // For "Confirm Bulk Sale"
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const [isConfirmingBulkSale, setIsConfirmingBulkSale] = useState(false);
 
 
-  useEffect(() => { /* ... (user auth and focus logic - no change) ... */
+  useEffect(() => { 
     if (!user) { router.push('/vendor/login'); } 
     else { if (!isScannerActive && !isBulkAddModalOpen) { barcodeInputRef.current?.focus(); } }
   }, [user, router, isScannerActive, isBulkAddModalOpen]);
@@ -103,8 +99,7 @@ export default function VendorScanPage() {
 
   const parseBarcode = useCallback((fullBarcode: string): { articleNo: string; weightGrams: number } | null => {
     fullBarcode = fullBarcode.trim();
-    if (fullBarcode.length >= (BARCODE_PREFIX.length + ARTICLE_NO_IN_BARCODE_LENGTH + WEIGHT_GRAMS_IN_BARCODE_LENGTH)) { // Use const BARCODE_PREFIX.length
-        // Assuming prefix is not part of articleNo or weight, but helps identify the start
+    if (fullBarcode.length >= (BARCODE_PREFIX.length + ARTICLE_NO_IN_BARCODE_LENGTH + WEIGHT_GRAMS_IN_BARCODE_LENGTH)) {
         const articleStartIndex = BARCODE_PREFIX.length;
         const articlePart = fullBarcode.substring(articleStartIndex, articleStartIndex + ARTICLE_NO_IN_BARCODE_LENGTH);
         const weightPart = fullBarcode.substring(articleStartIndex + ARTICLE_NO_IN_BARCODE_LENGTH, articleStartIndex + ARTICLE_NO_IN_BARCODE_LENGTH + WEIGHT_GRAMS_IN_BARCODE_LENGTH);
@@ -112,7 +107,7 @@ export default function VendorScanPage() {
         const articleNo = articlePart;
         const weightGrams = parseInt(weightPart, 10);
         
-        if (!isNaN(weightGrams) && articleNo.match(/^\d+$/) && articleNo.length === ARTICLE_NO_IN_BARCODE_LENGTH && weightGrams > 0) { // ensure articleNo is all digits
+        if (!isNaN(weightGrams) && articleNo.match(/^\d+$/) && articleNo.length === ARTICLE_NO_IN_BARCODE_LENGTH && weightGrams > 0) {
             return { articleNo, weightGrams };
         }
     }
@@ -141,26 +136,26 @@ export default function VendorScanPage() {
       setScannedItem(data); setOriginalScannedBarcode(currentBarcodeValue); sonnerToast.success(`Item Found: ${data.articleName}`);
     } catch (err: any) { setError(err.message); sonnerToast.error(err.message); setScannedItem(null);
     } finally { setIsLoading(false); if (!scannedValue) barcodeInputRef.current?.focus(); }
-  }, [barcode, parseBarcode]); // Added parseBarcode to dependencies
+  }, [barcode, parseBarcode]);
 
 
-  const onDetected = useCallback((result: QuaggaDetectionResult) => { /* ... (no change from your provided code) ... */
+  const onDetected = useCallback((result: QuaggaDetectionResult) => {
     if (result && result.codeResult && result.codeResult.code) {
       console.log("QuaggaJS Detected:", result.codeResult.code);
-      sonnerToast.info("Barcode Scanned via Camera!"); // Changed toast type
-      setBarcode(result.codeResult.code); // Set the input field as well
-      setIsScannerActive(false); // Stop scanner after successful scan
+      sonnerToast.info("Barcode Scanned via Camera!");
+      setBarcode(result.codeResult.code);
+      setIsScannerActive(false);
       setScannerError(null);
-      handleBarcodeSubmit(undefined, result.codeResult.code); // Pass scanned value to submit
+      handleBarcodeSubmit(undefined, result.codeResult.code);
     }
-  }, [handleBarcodeSubmit]); // handleBarcodeSubmit is a dependency
+  }, [handleBarcodeSubmit]);
 
-  const stopQuaggaScanner = useCallback(() => { /* ... (no change from your provided code) ... */
+  const stopQuaggaScanner = useCallback(() => {
     if (isQuaggaInitialized) { Quagga.offDetected(onDetected); Quagga.offProcessed(); Quagga.stop(); setIsQuaggaInitialized(false); console.log("Quagga scanner stopped.");}
   }, [onDetected, isQuaggaInitialized]);
   
   useEffect(() => { return () => { stopQuaggaScanner(); }; }, [stopQuaggaScanner]);
-  useEffect(() => { /* ... (Quagga init/start/stop effect - no change from your provided code) ... */
+  useEffect(() => { 
     if (firstScannerEffectRun.current) { firstScannerEffectRun.current = false; return; }
     if (isScannerActive) { if (!scannerContainerRef.current) { setScannerError("Scanner UI element not ready."); setIsScannerActive(false); return; } setScannerError(null);
       const quaggaConfig: QuaggaConfig = { inputStream: { name: "Live", type: "LiveStream", target: scannerContainerRef.current!, constraints: { facingMode: "environment", }, area: { top: "20%", right: "5%", left: "5%", bottom: "20%" }, singleChannel: false }, numOfWorkers: navigator.hardwareConcurrency > 1 ? navigator.hardwareConcurrency -1 : 1, locate: true, frequency: 10, decoder: { readers: [ "code_128_reader", "ean_reader" ], debug: { drawBoundingBox: true, showFrequency: false, drawScanline: true, showPattern: false, }, multiple: false, }, locator: { halfSample: true, patchSize: "large", debug: { showCanvas: false }, }, };
@@ -169,21 +164,45 @@ export default function VendorScanPage() {
   }, [isScannerActive, onDetected, stopQuaggaScanner]);
 
 
-  const toggleCameraScanner = () => { /* ... (no change from your provided code) ... */
+  const toggleCameraScanner = () => {
     if (isScannerActive) setIsScannerActive(false);
     else { setError(null); setScannedItem(null); setBarcode(""); setScannerError(null); setIsScannerActive(true); }
   };
 
-  const handleConfirmSale = async () => { /* ... (no change for single sale confirm) ... */ 
+  const handleConfirmSale = async () => { 
     if (!scannedItem || !user?.id || !originalScannedBarcode) { sonnerToast.error("No item/user/barcode for sale."); return; }
     setIsConfirmingSale(true); setError(null);
-    const salePayload = { barcodeScanned: originalScannedBarcode, staffId: user.id, weightGrams: scannedItem.weightGrams, calculatedSellPrice: scannedItem.calculatedSellPrice, articleNo: scannedItem.articleNumber, product_articleNumber: scannedItem.articleNumber, product_articleName: scannedItem.articleName, product_posDescription: scannedItem.posDescription, product_metlerCode: scannedItem.metlerCode, product_hsnCode: scannedItem.hsnCode, product_taxPercentage: scannedItem.taxPercentage, product_purchasePricePerKg: scannedItem.purchasePricePerKg, product_sellingRatePerKg: scannedItem.sellingRatePerKg, product_mrpPer100g: scannedItem.mrpPer100g, product_remark: scannedItem.remark !== undefined ? scannedItem.remark : null, };
-    try { const response = await fetch("/api/sales/record", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(salePayload), }); if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || "Failed to record sale"); } sonnerToast.success(`Sale Confirmed: ${scannedItem.articleName}`); setScannedItem(null); setOriginalScannedBarcode(""); setBarcode(""); barcodeInputRef.current?.focus();
+    
+    // MODIFIED: Add staffName to payload
+    const salePayload = { 
+      barcodeScanned: originalScannedBarcode, 
+      staffId: user.id, 
+      staffName: user.name || "Unknown Staff", // Added staffName
+      weightGrams: scannedItem.weightGrams, 
+      calculatedSellPrice: scannedItem.calculatedSellPrice, 
+      articleNo: scannedItem.articleNumber, 
+      product_articleNumber: scannedItem.articleNumber, 
+      product_articleName: scannedItem.articleName, 
+      product_posDescription: scannedItem.posDescription, 
+      product_metlerCode: scannedItem.metlerCode, 
+      product_hsnCode: scannedItem.hsnCode, 
+      product_taxPercentage: scannedItem.taxPercentage, 
+      product_purchasePricePerKg: scannedItem.purchasePricePerKg, 
+      product_sellingRatePerKg: scannedItem.sellingRatePerKg, 
+      product_mrpPer100g: scannedItem.mrpPer100g, 
+      product_remark: scannedItem.remark !== undefined ? scannedItem.remark : null, 
+    };
+
+    try { 
+      const response = await fetch("/api/sales/record", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(salePayload), }); 
+      if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || "Failed to record sale"); } 
+      sonnerToast.success(`Sale Confirmed: ${scannedItem.articleName}`); 
+      setScannedItem(null); setOriginalScannedBarcode(""); setBarcode(""); 
+      barcodeInputRef.current?.focus();
     } catch (err: any) { setError(err.message); sonnerToast.error(err.message);
     } finally { setIsConfirmingSale(false); }
   };
 
-  // --- Bulk Add Logic ---
   const handleProcessBulkBarcodes = async () => {
     if (!bulkBarcodeInput.trim()) {
       sonnerToast.info("Please paste barcodes into the text area.");
@@ -207,9 +226,11 @@ export default function VendorScanPage() {
       }
       const { articleNo, weightGrams } = parsed;
       try {
+        // This fetch will now benefit from server-side caching in /api/products/lookup
         const response = await fetch("/api/products/lookup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ articleNo, weightGrams }), });
         if (!response.ok) {
-          invalids.push(`${currentBarcode} (Product not found or error)`);
+          const errData = await response.json();
+          invalids.push(`${currentBarcode} (${errData.message || 'Product not found'})`);
           continue;
         }
         const itemDetails: ScannedItemDetails = await response.json();
@@ -234,38 +255,35 @@ export default function VendorScanPage() {
 
     setIsConfirmingBulkSale(true);
 
-    // Frontend now sends a simpler payload for each item.
-    // Product details and final price calculation will happen on the server.
     const salesToRecordPayload = bulkProcessedItems.map(item => ({
-      barcodeScanned: item.originalBarcode, // The full original barcode
-      articleNo: item.articleNumber,       // Parsed article number
-      weightGrams: item.weightGrams,       // Parsed weight
-      staffId: user.id,
-      // NO dateOfSale needed from frontend, server will use current IST date
-      // NO calculatedSellPrice from frontend, server will calculate
-      // NO product_* fields from frontend, server will look up
+      barcodeScanned: item.originalBarcode,
+      articleNo: item.articleNumber,
+      weightGrams: item.weightGrams,
+      staffId: user.id, 
+      // Add product name here for bulk aggregation if needed by bulk API directly,
+      // otherwise bulk API will look it up or get it from its own product lookup.
+      // For the current bulk API design, it re-looks up product details.
+      // So only staffId is strictly needed from user context here.
     }));
 
     try {
-      const response = await fetch("/api/sales/bulk-record", { // Using the new vendor-specific bulk API
+      const response = await fetch("/api/sales/bulk-record", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sales: salesToRecordPayload }), // API expects { sales: [...] }
+        body: JSON.stringify({ sales: salesToRecordPayload }),
       });
       const result = await response.json();
-      if (!response.ok && response.status !== 207) { // 207 is Multi-Status, still process results
+      if (!response.ok && response.status !== 207) {
         throw new Error(result.message || "Bulk sale confirmation failed.");
       }
       
-      // Handle response that might include successful and failed records
       let successMsg = "";
       if (result.successfulRecords > 0) {
         successMsg += `${result.successfulRecords} sales confirmed. `;
       }
       if (result.failedRecords > 0) {
         successMsg += `${result.failedRecords} failed.`;
-        sonnerToast.warning(`Bulk sale: ${result.failedRecords} items failed. Check details if provided.`);
-        // Optionally display detailed errors from result.errors if you want
+        sonnerToast.warning(`Bulk sale: ${result.failedRecords} items failed.`);
         if (result.errors && result.errors.length > 0) {
             console.error("Bulk sale failures:", result.errors);
             result.errors.forEach((err: {barcode: string, message: string}) => {
@@ -277,11 +295,9 @@ export default function VendorScanPage() {
       } else if (!result.message && result.successfulRecords === 0 && result.failedRecords === 0) {
         sonnerToast.info("No sales were processed in the bulk request.");
       } else if (result.message) {
-        // General message from API if no specific counts
         if (response.ok || response.status === 207) sonnerToast.success(result.message);
         else sonnerToast.error(result.message);
       }
-
 
       setIsBulkAddModalOpen(false);
       setBulkBarcodeInput("");
@@ -294,13 +310,12 @@ export default function VendorScanPage() {
     }
   };
 
-
-  const handleLogout = () => { /* ... (no change) ... */ logout(); if (isScannerActive) setIsScannerActive(false); router.push('/'); };
-  if (!user) { /* ... (no change) ... */ return (<main className="flex min-h-screen flex-col items-center justify-center p-4"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="mt-4">Loading...</p></main>); }
+  const handleLogout = () => { logout(); if (isScannerActive) setIsScannerActive(false); router.push('/'); };
+  if (!user) { return (<main className="flex min-h-screen flex-col items-center justify-center p-4"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="mt-4">Loading...</p></main>); }
 
   return (
     <>
-      <style jsx global>{`/* ... (Quagga styles - no change) ... */ #${QUAGGA_SCANNER_REGION_ID} { position: relative; width: 100%; min-height: 280px; overflow: hidden; background-color: #333; } #${QUAGGA_SCANNER_REGION_ID} video, #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { position: absolute; left: 0; top: 0; width: 100% !important; height: 100% !important; } #${QUAGGA_SCANNER_REGION_ID} video { object-fit: cover; } #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { z-index: 10; } `}</style>
+      <style jsx global>{` #${QUAGGA_SCANNER_REGION_ID} { position: relative; width: 100%; min-height: 280px; overflow: hidden; background-color: #333; } #${QUAGGA_SCANNER_REGION_ID} video, #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { position: absolute; left: 0; top: 0; width: 100% !important; height: 100% !important; } #${QUAGGA_SCANNER_REGION_ID} video { object-fit: cover; } #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { z-index: 10; } `}</style>
       <Toaster richColors position="top-right" />
       <main className="flex min-h-screen flex-col items-center justify-start p-4 md:p-8 bg-slate-50 dark:bg-slate-900">
         <Card className="w-full max-w-md">
@@ -312,7 +327,6 @@ export default function VendorScanPage() {
             <CardDescription>Welcome, <strong style={{ fontSize: '1.1em' }}>{user.name || 'Staff'}</strong>! Scan or type barcode. Or use Bulk Add.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Single Scan Section */}
             <div className="space-y-2">
               <Button type="button" onClick={toggleCameraScanner} variant="outline" className="w-full" disabled={isLoading || isConfirmingSale || isConfirmingBulkSale}>
                 <Camera className="mr-2 h-4 w-4" />{isScannerActive ? "Stop Camera Scan" : "Scan with Camera"}
@@ -356,68 +370,35 @@ export default function VendorScanPage() {
           </CardFooter>
         </Card>
 
-        {/* Bulk Add Sales Dialog for Vendor */}
         <Dialog open={isBulkAddModalOpen} onOpenChange={(isOpen) => {
             setIsBulkAddModalOpen(isOpen);
-            if (!isOpen) { // Reset on close
-                setBulkBarcodeInput('');
-                setBulkProcessedItems([]);
-                setBulkInvalidBarcodes([]);
-            }
+            if (!isOpen) { setBulkBarcodeInput(''); setBulkProcessedItems([]); setBulkInvalidBarcodes([]); }
         }}>
-          {/* MODIFIED DialogContent className for better width on mobile */}
           <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] flex flex-col p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Bulk Add Sales</DialogTitle>
-              <DialogDescription>
-                Paste barcodes (one per line). Processed items will be shown below.
-              </DialogDescription>
+              <DialogDescription>Paste barcodes (one per line). Processed items will be shown below.</DialogDescription>
             </DialogHeader>
-            {/* Outer ScrollArea for the entire dialog body if it gets too tall */}
-            <ScrollArea className="flex-grow overflow-y-auto -mx-4 sm:-mx-6 px-4 sm:px-6"> {/* Negative margins to extend scroll to edges, then padding back */}
+            <ScrollArea className="flex-grow overflow-y-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
                 <ScrollBar orientation="horizontal"/>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
                     <Label htmlFor="bulkBarcodesVendor">Barcodes (one per line)</Label>
-                    <Textarea
-                      id="bulkBarcodesVendor"
-                      value={bulkBarcodeInput}
-                      onChange={(e) => setBulkBarcodeInput(e.target.value)}
-                      placeholder={"2110000600038848000421\n2110000600038851002081\n..."}
-                      rows={5} // Further reduced rows for very small screens
-                      className="font-mono text-xs"
-                      disabled={isProcessingBulk || isConfirmingBulkSale}
-                    />
+                    <Textarea id="bulkBarcodesVendor" value={bulkBarcodeInput} onChange={(e) => setBulkBarcodeInput(e.target.value)} placeholder={"2110000600038848000421\n2110000600038851002081\n..."} rows={5} className="font-mono text-xs" disabled={isProcessingBulk || isConfirmingBulkSale}/>
                   </div>
                   <Button onClick={handleProcessBulkBarcodes} disabled={isProcessingBulk || isConfirmingBulkSale || !bulkBarcodeInput.trim()}>
-                    {isProcessingBulk && !isConfirmingBulkSale ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Process Barcodes
+                    {isProcessingBulk && !isConfirmingBulkSale ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Process Barcodes
                   </Button>
-
                   {bulkProcessedItems.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <h3 className="font-semibold text-green-600 dark:text-green-400">Valid Items for Sale ({bulkProcessedItems.length}):</h3>
                       <h4 className="font-medium text-neutral-800 dark:text-neutral-400"> Scroll right to double check all values </h4>
-                      {/* ScrollArea for the table itself */}
-                      <ScrollArea className="w-full rounded-md border"> {/* Removed whitespace-nowrap here, let table define its width */}
-                        {/* Table needs a min-width that's greater than the typical mobile viewport width */}
+                      <ScrollArea className="w-full rounded-md border">
                         <Table className="text-xs min-w-[550px] sm:min-w-[600px]"> 
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="py-2 px-2.5 min-w-[150px] sm:min-w-[200px]">Product</TableHead>
-                              <TableHead className="text-right py-2 px-2.5 min-w-[70px] sm:min-w-[80px]">Weight</TableHead>
-                              <TableHead className="text-right py-2 px-2.5 min-w-[80px] sm:min-w-[90px]">Price</TableHead>
-                              <TableHead className="py-2 px-2.5 min-w-[150px] sm:min-w-[180px]">Barcode</TableHead>
-                            </TableRow>
-                          </TableHeader>
+                          <TableHeader><TableRow><TableHead className="py-2 px-2.5 min-w-[150px] sm:min-w-[200px]">Product</TableHead><TableHead className="text-right py-2 px-2.5 min-w-[70px] sm:min-w-[80px]">Weight</TableHead><TableHead className="text-right py-2 px-2.5 min-w-[80px] sm:min-w-[90px]">Price</TableHead><TableHead className="py-2 px-2.5 min-w-[150px] sm:min-w-[180px]">Barcode</TableHead></TableRow></TableHeader>
                           <TableBody>
                             {bulkProcessedItems.map((item, index) => (
-                              <TableRow key={`${item.originalBarcode}-${index}`}>
-                                <TableCell className="py-1.5 px-2.5">{item.articleName} ({item.articleNumber})</TableCell>
-                                <TableCell className="text-right py-1.5 px-2.5">{item.weightGrams}g</TableCell>
-                                <TableCell className="text-right py-1.5 px-2.5">₹{item.calculatedSellPrice.toFixed(2)}</TableCell>
-                                <TableCell className="font-mono py-1.5 px-2.5">{item.originalBarcode}</TableCell>
-                              </TableRow>
+                              <TableRow key={`${item.originalBarcode}-${index}`}><TableCell className="py-1.5 px-2.5">{item.articleName} ({item.articleNumber})</TableCell><TableCell className="text-right py-1.5 px-2.5">{item.weightGrams}g</TableCell><TableCell className="text-right py-1.5 px-2.5">₹{item.calculatedSellPrice.toFixed(2)}</TableCell><TableCell className="font-mono py-1.5 px-2.5">{item.originalBarcode}</TableCell></TableRow>
                             ))}
                           </TableBody>
                         </Table>
@@ -425,32 +406,21 @@ export default function VendorScanPage() {
                       </ScrollArea>
                     </div>
                   )}
-
                   {bulkInvalidBarcodes.length > 0 && (
                     <div className="mt-4 space-y-2">
-                      <h3 className="font-semibold text-red-600 dark:text-red-400 flex items-center gap-1">
-                        <AlertTriangle className="h-4 w-4"/> Invalid/Unfound ({bulkInvalidBarcodes.length}):
-                      </h3>
-                      <ScrollArea className="max-h-28 w-full rounded-md border bg-red-50 dark:bg-red-900/20 p-2"> {/* Reduced max-h */}
-                        <ul className="list-disc list-inside text-xs">
-                          {bulkInvalidBarcodes.map((b, index) => (
-                            <li key={index} className="font-mono">{b}</li>
-                          ))}
-                        </ul>
-                         <ScrollBar orientation="vertical" />
+                      <h3 className="font-semibold text-red-600 dark:text-red-400 flex items-center gap-1"><AlertTriangle className="h-4 w-4"/> Invalid/Unfound ({bulkInvalidBarcodes.length}):</h3>
+                      <ScrollArea className="max-h-28 w-full rounded-md border bg-red-50 dark:bg-red-900/20 p-2">
+                        <ul className="list-disc list-inside text-xs">{bulkInvalidBarcodes.map((b, index) => (<li key={index} className="font-mono">{b}</li>))}</ul>
+                        <ScrollBar orientation="vertical" />
                       </ScrollArea>
                     </div>
                   )}
                 </div>
             </ScrollArea>
-            <DialogFooter className="mt-auto pt-4 sm:pt-6 border-t px-4 sm:px-6 pb-4"> {/* Adjusted padding */}
+            <DialogFooter className="mt-auto pt-4 sm:pt-6 border-t px-4 sm:px-6 pb-4">
               <DialogClose asChild><Button variant="outline" disabled={isProcessingBulk || isConfirmingBulkSale}>Cancel</Button></DialogClose>
-              <Button 
-                onClick={handleConfirmBulkSale} 
-                disabled={isProcessingBulk || isConfirmingBulkSale || bulkProcessedItems.length === 0}
-              >
-                {isConfirmingBulkSale ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Confirm Sale of {bulkProcessedItems.length} Item(s)
+              <Button onClick={handleConfirmBulkSale} disabled={isProcessingBulk || isConfirmingBulkSale || bulkProcessedItems.length === 0}>
+                {isConfirmingBulkSale ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Confirm Sale of {bulkProcessedItems.length} Item(s)
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -3,7 +3,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
 import admin from 'firebase-admin';
 
-// ProductDetailsFromDB and lookupProduct can be shared or re-defined
+const IST_TIMEZONE = 'Asia/Kolkata';
+
+const getCurrentISODateStringInIST = (): string => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(now);
+};
+
+const getCurrentHourInIST = (): number => {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric', hour12: false, timeZone: IST_TIMEZONE,
+    });
+    return parseInt(formatter.format(now), 10);
+};
+
 interface ProductDetailsFromDB {
   articleNumber: string;
   articleName: string;
@@ -18,95 +35,85 @@ interface ProductDetailsFromDB {
 }
 
 async function lookupProduct(articleNo: string): Promise<ProductDetailsFromDB | null> {
-  if (!articleNo || typeof articleNo !== 'string' || articleNo.trim() === "") {
-    console.warn(`[VendorBulk] Invalid article number for lookup: ${articleNo}`);
-    return null;
-  }
+  if (!articleNo || typeof articleNo !== 'string' || articleNo.trim() === "") return null;
   const productRef = db.collection('product').doc(String(articleNo).trim());
   const productDoc = await productRef.get();
-  if (!productDoc.exists) {
-    console.warn(`[VendorBulk] Product ${articleNo} not found.`);
-    return null;
-  }
+  if (!productDoc.exists) return null;
   return productDoc.data() as ProductDetailsFromDB;
 }
 
-// Payload from vendor frontend for each item
 interface VendorBulkSaleItemPayload {
   barcodeScanned: string;
-  articleNo: string; // Parsed from barcode
-  weightGrams: number; // Parsed from barcode
-  staffId: string; // Logged-in vendor
-  // calculatedSellPrice is determined after product lookup
-  // product_* fields are determined after product lookup
-  // dateOfSale and timestamp are determined by server
+  articleNo: string;
+  weightGrams: number;
+  staffId: string;
+}
+
+interface ProcessedSaleData {
+    articleNo: string;
+    barcodeScanned: string;
+    weightGrams: number;
+    calculatedSellPrice: number;
+    staffId: string;
+    status: string;
+    timestamp: admin.firestore.FieldValue;
+    dateOfSale: string;
+    product_articleNumber: string;
+    product_articleName: string;
+    product_posDescription?: string | null;
+    product_metlerCode?: string | null;
+    product_hsnCode?: string | null;
+    product_taxPercentage?: number | null;
+    product_purchasePricePerKg?: number | null;
+    product_sellingRatePerKg?: number | null;
+    product_mrpPer100g?: number | null;
+    product_remark?: string | null;
 }
 
 export async function POST(req: NextRequest) {
-  console.log("API POST /api/sales/bulk-record called (Vendor)");
+  console.log("API POST /api/sales/bulk-record called");
   try {
-    // The frontend will send an object with a 'sales' array
     const body = await req.json();
     const salesPayload = body.sales as VendorBulkSaleItemPayload[];
-
 
     if (!Array.isArray(salesPayload) || salesPayload.length === 0) {
       return NextResponse.json({ message: 'Request body must be a non-empty array of sales.' }, { status: 400 });
     }
 
     const salesCollectionRef = db.collection('salesTransactions');
-    const firestoreBatch = db.batch();
+    const salesBatch = db.batch();
+    
     let successfulRecords = 0;
     let failedRecords = 0;
     const errors: { barcode: string, message: string }[] = [];
-
-    const IST_TIMEZONE = 'Asia/Kolkata';
-    const getISODateStringInIST = (date: Date): string => {
-        const parts = new Intl.DateTimeFormat('en-CA', { timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
-        const year = parts.find(part => part.type === 'year')?.value;
-        const month = parts.find(part => part.type === 'month')?.value;
-        const day = parts.find(part => part.type === 'day')?.value;
-        return `${year}-${month}-${day}`;
-    };
     
-    // All sales in this batch will share the same server-evaluated timestamp and derived dateOfSale
+    const todayStrIST = getCurrentISODateStringInIST();
+    // For bulk, all items share the same server-evaluated timestamp from Firestore
+    // and the same current hour for hourly breakdown.
+    const currentHourIST = getCurrentHourInIST();
+    const currentHourStr = currentHourIST.toString().padStart(2, '0');
     const currentServerTimestamp = admin.firestore.FieldValue.serverTimestamp();
-    // For deriving dateOfSale, we'd ideally get the resolved server timestamp.
-    // Since we can't get it before commit, we'll use current server date for dateOfSale.
-    // The exact timestamp object will be resolved by Firestore upon commit.
-    const currentDateForSale = getISODateStringInIST(new Date());
 
+    const processedSalesForAgg: ProcessedSaleData[] = [];
 
     for (const sale of salesPayload) {
-      // Basic validation from frontend payload
       if (!sale.articleNo || !sale.staffId || typeof sale.weightGrams !== 'number' || !sale.barcodeScanned) {
-        failedRecords++;
-        errors.push({ barcode: sale.barcodeScanned || 'UNKNOWN', message: 'Core data missing from payload (articleNo, staffId, weightGrams, barcodeScanned).' });
-        console.warn("[VendorBulk] Skipping sale due to missing core data from payload:", sale);
-        continue;
+        failedRecords++; errors.push({ barcode: sale.barcodeScanned || 'UNKNOWN', message: 'Core data missing.'}); continue;
       }
-
       const productDetails = await lookupProduct(sale.articleNo);
-
       if (!productDetails || typeof productDetails.sellingRatePerKg !== 'number') {
-        failedRecords++;
-        errors.push({ barcode: sale.barcodeScanned, message: `Product details not found or invalid for article ${sale.articleNo}.` });
-        console.warn(`[VendorBulk] Product lookup failed for articleNo: ${sale.articleNo}`);
-        continue;
+        failedRecords++; errors.push({ barcode: sale.barcodeScanned, message: `Product invalid: ${sale.articleNo}.`}); continue;
       }
-
       const calculatedSellPrice = parseFloat(((sale.weightGrams / 1000) * productDetails.sellingRatePerKg).toFixed(2));
-
-      const saleData = {
-        articleNo: sale.articleNo, // This is product_articleNumber
+      const saleData: ProcessedSaleData = {
+        articleNo: sale.articleNo,
         barcodeScanned: sale.barcodeScanned,
         weightGrams: sale.weightGrams,
         calculatedSellPrice,
         staffId: sale.staffId,
         status: "SOLD",
-        timestamp: currentServerTimestamp, // Use server timestamp for all
-        dateOfSale: currentDateForSale,    // Derived IST date from server time
-
+        timestamp: currentServerTimestamp,
+        dateOfSale: todayStrIST,
         product_articleNumber: productDetails.articleNumber,
         product_articleName: productDetails.articleName,
         product_posDescription: productDetails.posDescription || null,
@@ -118,45 +125,130 @@ export async function POST(req: NextRequest) {
         product_mrpPer100g: productDetails.mrpPer100g !== undefined ? productDetails.mrpPer100g : null,
         product_remark: productDetails.remark || null,
       };
-
-      const docRef = salesCollectionRef.doc(); // Auto-generate ID
-      firestoreBatch.set(docRef, saleData);
+      const docRef = salesCollectionRef.doc();
+      salesBatch.set(docRef, saleData);
+      processedSalesForAgg.push(saleData);
       successfulRecords++;
-
-      // Committing in smaller chunks within the loop if needed (max 500 operations per batch)
-      if (successfulRecords > 0 && successfulRecords % 490 === 0 && salesPayload.length > successfulRecords) {
-        console.log(`[VendorBulk] Committing intermediate batch of ${490} sales...`);
-        await firestoreBatch.commit();
-        // firestoreBatch = db.batch(); // Firestore batches are single use. This line needs to be db.batch() to create a new one
-        // This logic is tricky. It's simpler to commit once if the total is expected < 500.
-        // For very large vendor bulk adds, this loop would need a new batch instance.
-        // For now, assuming vendor bulk adds are < 490 items at once.
-      }
     }
 
     if (successfulRecords > 0) {
-        console.log(`[VendorBulk] Committing final batch of ${successfulRecords} sales...`);
-        await firestoreBatch.commit();
+      await salesBatch.commit();
+      console.log(`[BulkRecord] Committed ${successfulRecords} sales transactions.`);
+
+      const dailySummaryRef = db.collection('dailySalesSummaries').doc(todayStrIST);
+      const dailyStaffSalesRef = db.collection('dailyStaffSales').doc(todayStrIST);
+
+      const uniqueStaffIdsInBatch = Array.from(new Set(processedSalesForAgg.map(s => s.staffId)));
+      const staffNameMap = new Map<string, string>();
+      if (uniqueStaffIdsInBatch.length > 0) {
+          const staffQuerySnapshot = await db.collection('staff').where(admin.firestore.FieldPath.documentId(), 'in', uniqueStaffIdsInBatch).get();
+          staffQuerySnapshot.forEach(doc => { staffNameMap.set(doc.id, doc.data().name || "Unknown Staff"); });
+      }
+      
+      await db.runTransaction(async (transaction) => {
+        // --- Step 1: Perform all reads ---
+        const summaryDoc = await transaction.get(dailySummaryRef);
+        const staffSalesDoc = await transaction.get(dailyStaffSalesRef);
+
+        // --- Step 2: Prepare data for writes ---
+        let batchTotalSalesValue = 0;
+        processedSalesForAgg.forEach(s => batchTotalSalesValue += s.calculatedSellPrice);
+        
+        // For dailySalesSummaries (INCLUDING HOURLY)
+        let newTotalSalesForDay = batchTotalSalesValue;
+        let newTxCountForDay = processedSalesForAgg.length;
+        let hourlyBreakdownUpdate = summaryDoc.exists ? summaryDoc.data()?.hourlyBreakdown || {} : {};
+
+        // Aggregate hourly data for the current batch
+        // All sales in this bulk operation are considered to happen at `currentHourStr`
+        if (!hourlyBreakdownUpdate[currentHourStr]) {
+            hourlyBreakdownUpdate[currentHourStr] = { totalSales: 0, transactionCount: 0 };
+        }
+        hourlyBreakdownUpdate[currentHourStr].totalSales = parseFloat((hourlyBreakdownUpdate[currentHourStr].totalSales + batchTotalSalesValue).toFixed(2));
+        hourlyBreakdownUpdate[currentHourStr].transactionCount += processedSalesForAgg.length;
+
+        if (summaryDoc.exists) {
+          newTotalSalesForDay += summaryDoc.data()?.totalSalesValue || 0;
+          newTxCountForDay += summaryDoc.data()?.totalTransactions || 0;
+          // If summaryDoc exists, its hourlyBreakdown (excluding currentHourStr) is already part of hourlyBreakdownUpdate
+        }
+        const dailySummaryUpdateData = {
+          date: todayStrIST,
+          totalSalesValue: parseFloat(newTotalSalesForDay.toFixed(2)),
+          totalTransactions: newTxCountForDay,
+          hourlyBreakdown: hourlyBreakdownUpdate,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // For dailyStaffSales
+        let staffStats = staffSalesDoc.exists ? staffSalesDoc.data()?.staffStats || {} : {};
+        processedSalesForAgg.forEach(s => {
+          const staffId = s.staffId;
+          const staffName = staffNameMap.get(staffId) || "Unknown Staff";
+          if (!staffStats[staffId]) {
+            staffStats[staffId] = { name: staffName, totalSalesValue: 0, totalTransactions: 0 };
+          } else if (staffStats[staffId].name !== staffName && staffName !== "Unknown Staff") {
+             staffStats[staffId].name = staffName;
+          }
+          staffStats[staffId].totalSalesValue = parseFloat((staffStats[staffId].totalSalesValue + s.calculatedSellPrice).toFixed(2));
+          staffStats[staffId].totalTransactions += 1;
+        });
+        const staffSalesUpdateData = {
+          date: todayStrIST,
+          staffStats: staffStats,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        // --- Step 3: Perform all writes ---
+        transaction.set(dailySummaryRef, dailySummaryUpdateData, { merge: true });
+        transaction.set(dailyStaffSalesRef, staffSalesUpdateData, { merge: true });
+      });
+      console.log(`[BulkRecord] Updated daily (incl. hourly) and staff summaries.`);
+
+      const productAggBatch = db.batch();
+      const productAggSummary: { [key: string]: { name: string, qty: number, value: number, count: number } } = {};
+
+      processedSalesForAgg.forEach(s => {
+        if (!productAggSummary[s.articleNo]) {
+          productAggSummary[s.articleNo] = { name: s.product_articleName, qty: 0, value: 0, count: 0 };
+        }
+        productAggSummary[s.articleNo].qty += s.weightGrams;
+        productAggSummary[s.articleNo].value += s.calculatedSellPrice;
+        productAggSummary[s.articleNo].count += 1;
+      });
+
+      for (const articleNo in productAggSummary) {
+        const agg = productAggSummary[articleNo];
+        const productAggRef = db.collection('dailyProductSales').doc(`${todayStrIST}_${articleNo}`);
+        productAggBatch.set(productAggRef, {
+          date: todayStrIST,
+          productArticleNo: articleNo,
+          productName: agg.name,
+          totalQuantitySoldGrams: admin.firestore.FieldValue.increment(agg.qty),
+          totalSalesValue: admin.firestore.FieldValue.increment(parseFloat(agg.value.toFixed(2))),
+          totalTransactions: admin.firestore.FieldValue.increment(agg.count),
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
+      await productAggBatch.commit();
+      console.log(`[BulkRecord] Updated product summaries.`);
     }
     
     if (successfulRecords === 0 && failedRecords > 0) {
         return NextResponse.json({ 
             message: `Bulk sales processing completed with ${failedRecords} failures. No sales recorded.`,
-            successfulRecords,
-            failedRecords,
-            errors
+            successfulRecords, failedRecords, errors
         }, { status: 400 });
     }
 
     return NextResponse.json({ 
-        message: `Bulk sales processing completed. ${successfulRecords} recorded, ${failedRecords} failed.`,
-        successfulRecords,
-        failedRecords,
-        errors: errors.length > 0 ? errors : undefined
+        message: `Bulk sales processing completed. ${successfulRecords} recorded, ${failedRecords} failed. Aggregates updated.`,
+        successfulRecords, failedRecords, errors: errors.length > 0 ? errors : undefined
     }, { status: successfulRecords > 0 && failedRecords > 0 ? 207 : (successfulRecords > 0 ? 201 : 400) });
 
   } catch (error: any) {
-    console.error("[VendorBulk] Error in bulk sales record:", error);
-    return NextResponse.json({ message: 'Failed to process vendor bulk sales.', details: error.message }, { status: 500 });
+    console.error("[BulkRecord] Error in bulk sales record:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    return NextResponse.json({ message: 'Failed to process vendor bulk sales.', details: errorMessage }, { status: 500 });
   }
 }

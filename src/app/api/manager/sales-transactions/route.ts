@@ -1,73 +1,178 @@
 // src/app/api/manager/sales-transactions/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
-import admin from 'firebase-admin';
+import admin from 'firebase-admin'; // For types
+
+const IST_TIMEZONE = 'Asia/Kolkata';
+
+const getCurrentISODateStringInIST = (): string => {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(now);
+};
+
+// Helper to format a given Date object into YYYY-MM-DD string in IST
+const getCurrentISODateStringInISTFromDate = (date: Date): string => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(date);
+};
+
+// Interface for data fetched from dailySalesSummaries collection
+interface DailySalesSummaryDoc {
+    date: string;
+    totalSalesValue: number;    // Field name in Firestore
+    totalTransactions: number;  // Field name in Firestore
+    hourlyBreakdown?: any;      // Optional, not used directly in this summary list
+    lastUpdated?: admin.firestore.Timestamp;
+}
+
+// Interface for data fetched from dailyStaffSales collection
+interface DailyStaffSalesDoc {
+    date: string;
+    staffStats: {
+        [staffId: string]: {
+            name: string;
+            totalSalesValue: number;
+            totalTransactions: number;
+        }
+    };
+    lastUpdated?: admin.firestore.Timestamp;
+}
+
+// Interface for what the frontend expects for daily summaries
+interface DailySummaryForClient {
+    date: string;
+    totalSalesValue: number;
+    totalTransactions: number;
+}
+
 
 export async function GET(req: NextRequest) {
-  console.log("API GET /api/manager/sales-transactions called");
+  console.log("API GET /api/manager/sales-transactions called (Manager View)");
   try {
     const { searchParams } = new URL(req.url);
-    const startDate = searchParams.get('startDate'); // YYYY-MM-DD
-    const endDate = searchParams.get('endDate');     // YYYY-MM-DD
-    const staffId = searchParams.get('staffId');     // Specific staff ID
-    const status = searchParams.get('status');       // "SOLD", "RETURNED_PRE_BILLING"
-    const limit = parseInt(searchParams.get('limit') || '100'); // Default 100, frontend asks for 1000
+    const mode = searchParams.get('mode') || 'transactions';
+    let startDate = searchParams.get('startDate');
+    let endDate = searchParams.get('endDate');
+    const staffId = searchParams.get('staffId');
+    
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || (mode === 'transactions' ? '30' : '90'));
 
-    let query: admin.firestore.Query = db.collection('salesTransactions');
+    const todayStrIST = getCurrentISODateStringInIST();
 
-    // Apply filters
-    if (staffId && staffId !== "") {
+    if (mode === 'dailySummaries') {
+        console.log(`Fetching dailySummaries. staffId: ${staffId}, startDate: ${startDate}, endDate: ${endDate}`);
+        if (!startDate || !endDate) {
+            console.log("Defaulting date range for dailySummaries to last 7 days.");
+            const today = new Date(new Date().toLocaleString("en-US", {timeZone: IST_TIMEZONE}));
+            endDate = getCurrentISODateStringInIST();
+            const sevenDaysAgo = new Date(today);
+            sevenDaysAgo.setDate(today.getDate() - 6);
+            startDate = getCurrentISODateStringInISTFromDate(sevenDaysAgo);
+            console.log(`Defaulted range: ${startDate} to ${endDate}`);
+        }
+
+        const dailySummariesResult: DailySummaryForClient[] = [];
+        let query: admin.firestore.Query;
+
+        if (staffId && staffId !== "" && staffId !== "all") {
+            console.log(`Fetching daily summaries for specific staff: ${staffId}`);
+            query = db.collection('dailyStaffSales')
+                      .where('date', '>=', startDate)
+                      .where('date', '<=', endDate)
+                      .orderBy('date', 'desc')
+                      .limit(limit);
+            const snapshot = await query.get();
+            console.log(`dailyStaffSales query fetched ${snapshot.docs.length} documents.`);
+            snapshot.forEach(doc => {
+                const data = doc.data() as DailyStaffSalesDoc; // Use specific interface
+                if (data.staffStats && data.staffStats[staffId]) {
+                    dailySummariesResult.push({
+                        date: data.date,
+                        totalSalesValue: data.staffStats[staffId].totalSalesValue || 0,
+                        totalTransactions: data.staffStats[staffId].totalTransactions || 0
+                    });
+                } else {
+                    // This can happen if a dailyStaffSales doc exists for the date but not for this specific staff
+                    // Or if staffId in query params doesn't exist in the staffStats map
+                    console.log(`No stats found for staff ${staffId} in dailyStaffSales doc for date ${data.date}`);
+                }
+            });
+        } else {
+            console.log("Fetching daily summaries for all staff from dailySalesSummaries.");
+            query = db.collection('dailySalesSummaries')
+                      .where('date', '>=', startDate)
+                      .where('date', '<=', endDate)
+                      .orderBy('date', 'desc')
+                      .limit(limit);
+            const snapshot = await query.get();
+            console.log(`dailySalesSummaries query fetched ${snapshot.docs.length} documents.`);
+            snapshot.forEach(doc => {
+                const data = doc.data() as DailySalesSummaryDoc; // Use specific interface
+                // Ensure fields exist and default if necessary
+                dailySummariesResult.push({
+                    date: data.date,
+                    totalSalesValue: data.totalSalesValue || 0,
+                    totalTransactions: data.totalTransactions || 0
+                });
+            });
+        }
+        console.log("Returning dailySummaries:", dailySummariesResult);
+        return NextResponse.json({ dailySummaries: dailySummariesResult });
+    }
+
+    // --- Mode: Individual Transactions ---
+    if (!startDate || !endDate) {
+        startDate = todayStrIST;
+        endDate = todayStrIST;
+    }
+
+    let query: admin.firestore.Query = db.collection('salesTransactions')
+                                        .where('status', '==', 'SOLD');
+
+    if (staffId && staffId !== "" && staffId !== "all") {
       query = query.where('staffId', '==', staffId);
     }
-    if (status && status !== "") {
-      query = query.where('status', '==', status);
-    }
+    query = query.where('dateOfSale', '>=', startDate).where('dateOfSale', '<=', endDate);
     
-    // Date range filtering: Firestore requires the first orderBy to be on the field used for inequality filters.
-    if (startDate && endDate) {
-        query = query.where('dateOfSale', '>=', startDate).where('dateOfSale', '<=', endDate);
-        // If you also have other equality filters (staffId, status), they should come before date range.
-        // Firestore will need an index that starts with staffId/status, then dateOfSale.
-    } else if (startDate) {
-        query = query.where('dateOfSale', '>=', startDate);
-    } else if (endDate) {
-        query = query.where('dateOfSale', '<=', endDate);
-    }
+    const countSnapshot = await query.count().get();
+    const totalItems = countSnapshot.data().count;
+
+    query = query.orderBy('dateOfSale', 'desc').orderBy('timestamp', 'desc');
     
-    // Apply ordering
-    // The field used in an inequality filter (like dateOfSale >= startDate) must be the first field in orderBy.
-    if (startDate || endDate) {
-        query = query.orderBy('dateOfSale', 'desc').orderBy('timestamp', 'desc');
-    } else {
-        // If no date filters, you can order by timestamp directly.
-        // If staffId or status filters are active without date, you might need indexes like:
-        // staffId (asc), timestamp (desc)
-        // status (asc), timestamp (desc)
-        // staffId (asc), status(asc), timestamp(desc)
-        query = query.orderBy('timestamp', 'desc');
+    if (page > 1) {
+        const offset = (page - 1) * limit;
+        const previousPageSnapshot = await query.limit(offset).get();
+        if (!previousPageSnapshot.empty) {
+            const lastVisible = previousPageSnapshot.docs[previousPageSnapshot.docs.length - 1];
+            query = query.startAfter(lastVisible);
+        } else if (offset > 0 && totalItems > 0) {
+             return NextResponse.json({ 
+                transactions: [], 
+                pagination: { currentPage: page, pageSize: limit, totalItems, totalPages: Math.ceil(totalItems / limit) }
+            }, { status: 404 });
+        }
     }
-    
     query = query.limit(limit);
 
-    console.log("Executing sales transactions query with filters...");
     const snapshot = await query.get();
-    console.log(`Query completed, fetched ${snapshot.docs.length} documents.`);
-
     const transactions = snapshot.docs.map(doc => {
       const data = doc.data();
-      // Ensure all relevant fields, including denormalized product_ ones, are returned
       return {
         id: doc.id,
         articleNo: data.articleNo,
-        barcodeScanned: data.barcodeScanned || null, // Ensure null if undefined
+        barcodeScanned: data.barcodeScanned || null,
         calculatedSellPrice: data.calculatedSellPrice,
         dateOfSale: data.dateOfSale,
         staffId: data.staffId,
         status: data.status,
-        timestamp: data.timestamp && data.timestamp.toDate ? data.timestamp.toDate().toISOString() : new Date(0).toISOString(), // Handle if timestamp isn't a Firestore Timestamp
+        timestamp: data.timestamp?.toDate ? data.timestamp.toDate().toISOString() : new Date(0).toISOString(),
         weightGrams: data.weightGrams,
-        
-        // Include denormalized product fields stored with the transaction
         product_articleName: data.product_articleName || null,
         product_articleNumber: data.product_articleNumber || null,
         product_hsnCode: data.product_hsnCode || null,
@@ -83,27 +188,20 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       transactions,
+      pagination: {
+          currentPage: page,
+          pageSize: limit,
+          totalItems,
+          totalPages: Math.ceil(totalItems / limit),
+      }
     });
 
   } catch (error: any) {
-    console.error("Error in /api/manager/sales-transactions GET:", error);
-    // Check for Firestore's specific error code for missing index (which is 9, FAILED_PRECONDITION)
-    if (error.code === 9 || (typeof error.message === 'string' && error.message.includes('INVALID_ARGUMENT') && error.message.includes('requires an index'))) {
-        // Log the full error to see the index creation link if Firestore provides it
-        console.error("Firestore Index missing or query issue. Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        let detailMessage = error.details || error.message;
-        if (typeof detailMessage === 'string' && detailMessage.includes('The query requires an index.')){
-            // Try to extract the index creation URL (this format can change)
-            const match = detailMessage.match(/https?:\/\/[^\s]+/);
-            if (match) {
-                detailMessage += ` --- You can create the Firestore index using this link: ${match[0]}`;
-            }
-        }
-        return NextResponse.json({ 
-            message: 'Query failed due to missing Firestore index or invalid query structure. Check server logs for an index creation link or details.', 
-            details: detailMessage
-        }, { status: 500 });
+    console.error("Error in /api/manager/sales-transactions GET (Manager):", error);
+    if (error.code === 9 || (typeof error.message === 'string' && error.message.includes('requires an index'))) {
+        console.error("Firestore Index missing. Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        return NextResponse.json({ message: 'Query failed (missing Firestore index).', details: error.message }, { status: 500 });
     }
-    return NextResponse.json({ message: 'Internal Server Error', details: error.message || 'Unknown error' }, { status: 500 });
+    return NextResponse.json({ message: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }

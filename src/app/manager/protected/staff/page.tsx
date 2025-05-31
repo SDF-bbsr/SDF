@@ -227,7 +227,7 @@ export default function StaffManagementPage() {
                               </span>
                               <Button 
                                 variant="ghost" 
-                                size="icon-sm" 
+                                size="sm" 
                                 className="h-6 w-6 p-0" // Make button very small
                                 onClick={() => togglePasswordVisibility(staff.id, staff.role)}
                                 title={staff.showPassword ? "Hide password" : "Show password"}

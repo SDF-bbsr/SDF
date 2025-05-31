@@ -1,65 +1,90 @@
 // src/app/api/manager/staff-performance-data/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
-import admin from 'firebase-admin';
+import admin from 'firebase-admin'; // For Query type
 
-interface DailySalePoint {
-  date: string;
+const IST_TIMEZONE = 'Asia/Kolkata';
+
+// Helper to get YYYY-MM-DD string for a given date in IST
+const getISODateStringInISTFromDate = (date: Date): string => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(date);
+};
+
+interface DailyStaffSalesDoc {
+    date: string;
+    staffStats: {
+        [staffId: string]: {
+            name?: string; // Name is good to have but might not be strictly needed if staffId is key
+            totalSalesValue: number;
+            totalTransactions: number;
+        }
+    };
+    lastUpdated?: admin.firestore.Timestamp;
+}
+
+interface DailySalePointForStaff {
+  date: string; // YYYY-MM-DD
   totalSales: number;
   packetCount: number;
 }
 
 export async function GET(req: NextRequest) {
-  console.log("API /api/manager/staff-performance-data called");
+  console.log("API /api/manager/staff-performance-data called (Optimized)");
   try {
     const { searchParams } = new URL(req.url);
     const staffId = searchParams.get('staffId');
-    const startDate = searchParams.get('startDate'); // YYYY-MM-DD
-    const endDate = searchParams.get('endDate');     // YYYY-MM-DD
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
     if (!staffId || !startDate || !endDate) {
       return NextResponse.json({ message: 'Staff ID, start date, and end date are required.' }, { status: 400 });
     }
     console.log(`Fetching performance for staffId: ${staffId}, from: ${startDate}, to: ${endDate}`);
 
-    let query: admin.firestore.Query = db.collection('salesTransactions')
-                                        .where('staffId', '==', staffId)
-                                        .where('status', '==', 'SOLD')
-                                        .where('dateOfSale', '>=', startDate)
-                                        .where('dateOfSale', '<=', endDate);
-    
-    // To get daily trends, we need to order by dateOfSale
-    query = query.orderBy('dateOfSale', 'asc');
+    const query: admin.firestore.Query = db.collection('dailyStaffSales')
+                                        .where('date', '>=', startDate)
+                                        .where('date', '<=', endDate)
+                                        .orderBy('date', 'asc'); // Order chronologically for trend
 
-    const snapshot = await query.get();
-    console.log(`Query completed, fetched ${snapshot.docs.length} sales documents for staff performance.`);
+    const snapshot = await query.get(); // Reads N documents where N is number of days in range
+    console.log(`Query to dailyStaffSales fetched ${snapshot.docs.length} documents.`);
 
     let overallTotalValue = 0;
     let overallTotalPackets = 0;
-    const dailySalesMap: { [date: string]: { totalSales: number, packetCount: number } } = {};
+    const dailySalesTrend: DailySalePointForStaff[] = [];
 
     snapshot.forEach(doc => {
-      const data = doc.data();
-      const saleValue = data.calculatedSellPrice || 0;
-      const saleDate = data.dateOfSale;
+      const data = doc.data() as DailyStaffSalesDoc;
+      if (data.staffStats && data.staffStats[staffId]) {
+        const staffDailyStats = data.staffStats[staffId];
+        const dailySales = staffDailyStats.totalSalesValue || 0;
+        const dailyPackets = staffDailyStats.totalTransactions || 0;
 
-      overallTotalValue += saleValue;
-      overallTotalPackets += 1;
+        overallTotalValue += dailySales;
+        overallTotalPackets += dailyPackets;
 
-      if (!dailySalesMap[saleDate]) {
-        dailySalesMap[saleDate] = { totalSales: 0, packetCount: 0 };
+        dailySalesTrend.push({
+          date: data.date,
+          totalSales: parseFloat(dailySales.toFixed(2)),
+          packetCount: dailyPackets,
+        });
+      } else {
+        // If a day's record exists but no stats for this staff, add a zero point for graph continuity
+        dailySalesTrend.push({
+            date: data.date, // Or doc.id if 'date' field might be missing (though unlikely for this collection)
+            totalSales: 0,
+            packetCount: 0,
+        });
       }
-      dailySalesMap[saleDate].totalSales += saleValue;
-      dailySalesMap[saleDate].packetCount += 1;
     });
+    
+    // If snapshot is empty but we have a date range, we might want to fill with zeros
+    // For simplicity now, if no docs, trend will be empty. Client can handle "no data".
 
-    const dailySalesTrend: DailySalePoint[] = Object.entries(dailySalesMap).map(([date, totals]) => ({
-      date,
-      totalSales: parseFloat(totals.totalSales.toFixed(2)),
-      packetCount: totals.packetCount,
-    }));
-
-    const averagePacketSize = overallTotalPackets > 0 
+    const averagePacketValue = overallTotalPackets > 0 
         ? parseFloat((overallTotalValue / overallTotalPackets).toFixed(2)) 
         : 0;
 
@@ -67,17 +92,15 @@ export async function GET(req: NextRequest) {
       summary: {
         totalSalesValue: parseFloat(overallTotalValue.toFixed(2)),
         totalPackets: overallTotalPackets,
-        averagePacketValue: averagePacketSize, // Note: this is avg value per packet, not weight.
+        averagePacketValue: averagePacketValue,
       },
-      dailySalesTrend, // For the chart
+      dailySalesTrend,
     });
 
   } catch (error: any) {
     console.error("Error in /api/manager/staff-performance-data:", error);
-    if (error.code === 9 || error.code === 'failed-precondition') {
-        console.error("Potential Firestore Index issue for staff performance. Error details:", error.details);
-        return NextResponse.json({ message: 'Internal Server Error - Possible Firestore Index missing. Check server logs.', details: error.message }, { status: 500 });
-    }
+    // No specific index error check here as the query is simple (range on date, orderBy date)
+    // which Firestore usually handles well or creates a single-field index for.
     return NextResponse.json({ message: 'Internal Server Error', details: error.message }, { status: 500 });
   }
 }

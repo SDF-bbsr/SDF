@@ -1,39 +1,38 @@
 // src/app/api/products/lookup/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebaseAdmin'; // Ensure this path is correct
+import { db } from '@/lib/firebaseAdmin';
 
-// This interface should ideally be shared or match the one in VendorScanPage
 interface ProductDetailsFromDB {
   articleNumber: string;
   articleName: string;
   posDescription: string;
   metlerCode: string;
   hsnCode: string;
-  taxPercentage: number; // Changed to number
-  purchasePricePerKg: number; // Changed to number
-  sellingRatePerKg: number; // Changed to number
-  mrpPer100g: number; // Changed to number
+  taxPercentage: number;
+  purchasePricePerKg: number;
+  sellingRatePerKg: number;
+  mrpPer100g: number;
   remark?: string;
 }
 
-
-// This is the structure the frontend expects (matches ScannedItemDetails)
 interface LookupResponse {
   articleNumber: string;
   articleName: string;
   posDescription: string;
   metlerCode: string;
   hsnCode: string;
-  taxPercentage: number; // Changed to number
-  purchasePricePerKg: number; // Changed to number
-  sellingRatePerKg: number; // Changed to number
-  mrpPer100g: number; // Changed to number
+  taxPercentage: number;
+  purchasePricePerKg: number;
+  sellingRatePerKg: number;
+  mrpPer100g: number;
   remark?: string | null;
-
   weightGrams: number;
   calculatedSellPrice: number;
 }
 
+// Server-side in-memory cache for products
+const productCache = new Map<string, { data: ProductDetailsFromDB, timestamp: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL for product cache
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,11 +45,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Valid weight (grams) is required and must be positive.' }, { status: 400 });
     }
 
-    const productRef = db.collection('product').doc(String(articleNo)); // Assuming 'product' is the collection name
-    const productDoc = await productRef.get();
+    const trimmedArticleNo = String(articleNo).trim();
+
+    // Check cache first
+    const cachedEntry = productCache.get(trimmedArticleNo);
+    if (cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
+      console.log(`[ProductLookup] Cache HIT for articleNo: ${trimmedArticleNo}`);
+      const productData = cachedEntry.data;
+      // Essential validations still apply even for cached data
+      if (typeof productData.sellingRatePerKg !== 'number' || productData.sellingRatePerKg < 0) {
+         return NextResponse.json({ message: 'Cached product data is invalid: sellingRatePerKg missing or invalid.' }, { status: 500 });
+      }
+      const calculatedSellPrice = parseFloat(((weightGrams / 1000) * productData.sellingRatePerKg).toFixed(2));
+      const responsePayload: LookupResponse = { /* ... construct from productData and weightGrams ... */
+        articleNumber: trimmedArticleNo,
+        articleName: productData.articleName,
+        posDescription: productData.posDescription || "",
+        metlerCode: productData.metlerCode || "",
+        hsnCode: productData.hsnCode || "",
+        taxPercentage: productData.taxPercentage,
+        purchasePricePerKg: productData.purchasePricePerKg,
+        sellingRatePerKg: productData.sellingRatePerKg,
+        mrpPer100g: productData.mrpPer100g,
+        remark: productData.remark || null,
+        weightGrams: weightGrams,
+        calculatedSellPrice: calculatedSellPrice,
+      };
+      return NextResponse.json(responsePayload);
+    }
+
+    console.log(`[ProductLookup] Cache MISS or STALE for articleNo: ${trimmedArticleNo}. Fetching from DB.`);
+    const productRef = db.collection('product').doc(trimmedArticleNo);
+    const productDoc = await productRef.get(); // 1 Firestore Read
 
     if (!productDoc.exists) {
-      return NextResponse.json({ message: `Product with article number ${articleNo} not found.` }, { status: 404 });
+      return NextResponse.json({ message: `Product with article number ${trimmedArticleNo} not found.` }, { status: 404 });
     }
 
     const productData = productDoc.data() as ProductDetailsFromDB;
@@ -58,30 +87,28 @@ export async function POST(req: NextRequest) {
     if (!productData) {
         return NextResponse.json({ message: 'Product data is missing or malformed.' }, { status: 500 });
     }
-
-    // Validate essential fields from productData
     if (typeof productData.articleName !== 'string' || productData.articleName.trim() === "") {
         return NextResponse.json({ message: 'Product data is incomplete: missing or invalid articleName.' }, { status: 500 });
     }
-    if (typeof productData.sellingRatePerKg !== 'number' || productData.sellingRatePerKg < 0) { // Changed to number check
+    if (typeof productData.sellingRatePerKg !== 'number' || productData.sellingRatePerKg < 0) {
       return NextResponse.json({ message: 'Product data is invalid: sellingRatePerKg must be a non-negative number.' }, { status: 500 });
     }
 
-    const calculatedSellPrice = parseFloat(((weightGrams / 1000) * productData.sellingRatePerKg).toFixed(2));
+    // Store in cache
+    productCache.set(trimmedArticleNo, { data: productData, timestamp: Date.now() });
 
-    // Construct the response according to the LookupResponse (ScannedItemDetails) interface
+    const calculatedSellPrice = parseFloat(((weightGrams / 1000) * productData.sellingRatePerKg).toFixed(2));
     const responsePayload: LookupResponse = {
-      articleNumber: String(articleNo),
+      articleNumber: trimmedArticleNo,
       articleName: productData.articleName,
       posDescription: productData.posDescription || "",
       metlerCode: productData.metlerCode || "",
       hsnCode: productData.hsnCode || "",
-      taxPercentage: productData.taxPercentage, // Now a number
-      purchasePricePerKg: productData.purchasePricePerKg, // Now a number
-      sellingRatePerKg: productData.sellingRatePerKg, // Now a number
-      mrpPer100g: productData.mrpPer100g, // Now a number
+      taxPercentage: productData.taxPercentage,
+      purchasePricePerKg: productData.purchasePricePerKg,
+      sellingRatePerKg: productData.sellingRatePerKg,
+      mrpPer100g: productData.mrpPer100g,
       remark: productData.remark || null,
-
       weightGrams: weightGrams,
       calculatedSellPrice: calculatedSellPrice,
     };

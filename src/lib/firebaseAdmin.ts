@@ -50,9 +50,12 @@ if (!admin.apps.length) {
   console.log('Firebase Admin SDK already initialized.');
 }
 
-export const db = admin.apps.length ? admin.firestore() : null;
-export const authAdmin = admin.apps.length ? admin.auth() : null;
+export const db = admin.firestore();
+export const authAdmin = admin.auth();
 export default admin;
+// export const db = admin.apps.length ? admin.firestore() : null;
+// export const authAdmin = admin.apps.length ? admin.auth() : null;
+// export default admin;
 
 // Final check: if SDK is initialized but db is null, it's an unexpected state.
 if (admin.apps.length && !db) {
