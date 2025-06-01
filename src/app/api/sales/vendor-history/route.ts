@@ -1,72 +1,58 @@
 // src/app/api/sales/vendor-history/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebaseAdmin';
+import { FieldValue } from 'firebase-admin/firestore'; // Needed for potential future use, not immediately for GET
 
 const IST_TIMEZONE = 'Asia/Kolkata';
 
-// This function directly gets the YYYY-MM-DD string for the *current instant* in IST
+// --- Date Helper Functions (Mostly Unchanged, verify usage) ---
 const getCurrentISODateStringInIST = (): string => {
-  const now = new Date(); // Current server UTC time
-  const formatter = new Intl.DateTimeFormat('en-CA', { // en-CA gives YYYY-MM-DD
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: IST_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    year: 'numeric', month: '2-digit', day: '2-digit',
   });
-  return formatter.format(now); // Format the current UTC instant directly into IST date string
+  return formatter.format(now);
 };
 
-// Helper to get a Date object representing a specific YYYY-MM-DD in IST (at 00:00:00 IST)
-// This is useful for calculating week/month ranges based on a specific IST date.
 const getDateInIST = (yyyyMmDdStr: string): Date => {
-    // Parse the YYYY-MM-DD string and explicitly state it's an IST date.
-    // new Date("YYYY-MM-DDTHH:mm:ssZ") or new Date("YYYY-MM-DDTHH:mm:ss+05:30")
-    // A simpler way for just date is to construct carefully.
-    const [year, month, day] = yyyyMmDdStr.split('-').map(Number);
-    // This creates a Date object. When formatted with timeZone: 'UTC', it would be previous day evening.
-    // When formatted with timeZone: 'Asia/Kolkata', it represents start of day in IST.
-    // Let's make a UTC date that corresponds to 00:00 IST on that day.
-    // IST is UTC+5:30. So 00:00 IST on YYYY-MM-DD is (YYYY-MM-DD 00:00:00) - 5.5 hours in UTC.
-    // Example: 2025-05-29 00:00:00 IST is 2025-05-28 18:30:00 UTC
-    const dateAtUTCCorrespondingToISTMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - (5 * 60 + 30) * 60 * 1000);
-    return dateAtUTCCorrespondingToISTMidnight;
+  const [year, month, day] = yyyyMmDdStr.split('-').map(Number);
+  const dateAtUTCCorrespondingToISTMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - (5 * 60 + 30) * 60 * 1000);
+  return dateAtUTCCorrespondingToISTMidnight;
 };
 
+const getCurrentISODateStringInISTFromDate = (date: Date): string => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  return formatter.format(date);
+};
 
-const getWeekRangeInIST = (currentISTDateStr: string): { startOfWeek: string, endOfWeek: string, display: string } => {
-  const currentDateInIST = getDateInIST(currentISTDateStr); // Get a Date object for calculations
-
-  const d = new Date(currentDateInIST.valueOf()); // Clone for manipulation
-  const day = d.getUTCDay(); // Use getUTCDay because our Date object is aligned with UTC for IST's midnight
-  
-  // Adjust to get to Monday of the current week
+// These are used for transaction filters, so keep them
+const getWeekRangeInISTForFilter = (currentISTDateStr: string): { startOfWeek: string, endOfWeek: string, display: string } => {
+  const currentDateInIST = getDateInIST(currentISTDateStr);
+  const d = new Date(currentDateInIST.valueOf());
+  const day = d.getUTCDay();
   const diffToMonday = d.getUTCDate() - day + (day === 0 ? -6 : 1);
-  // Construct new dates using UTC methods to keep them aligned
   const startOfWeekDate = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diffToMonday));
-  
   const endOfWeekDate = new Date(startOfWeekDate.valueOf());
   endOfWeekDate.setUTCDate(startOfWeekDate.getUTCDate() + 6);
-
   const displayFormat: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: IST_TIMEZONE };
   const startDisplay = new Intl.DateTimeFormat('en-GB', displayFormat).format(startOfWeekDate);
   const endDisplay = new Intl.DateTimeFormat('en-GB', displayFormat).format(endOfWeekDate);
-  
   return {
-    startOfWeek: getCurrentISODateStringInISTFromDate(startOfWeekDate), // Format these specific dates
+    startOfWeek: getCurrentISODateStringInISTFromDate(startOfWeekDate),
     endOfWeek: getCurrentISODateStringInISTFromDate(endOfWeekDate),
     display: `${startDisplay} - ${endDisplay}`
   };
 };
 
-const getMonthRangeInIST = (currentISTDateStr: string): { startOfMonth: string, endOfMonth: string, display: string } => {
-  const currentDateInIST = getDateInIST(currentISTDateStr); // Get a Date object
-
+const getMonthRangeInISTForFilter = (currentISTDateStr: string): { startOfMonth: string, endOfMonth: string, display: string } => {
+  const currentDateInIST = getDateInIST(currentISTDateStr);
   const startOfMonthDate = new Date(Date.UTC(currentDateInIST.getUTCFullYear(), currentDateInIST.getUTCMonth(), 1));
-  const endOfMonthDate = new Date(Date.UTC(currentDateInIST.getUTCFullYear(), currentDateInIST.getUTCMonth() + 1, 0)); // Day 0 of next month
-  
+  const endOfMonthDate = new Date(Date.UTC(currentDateInIST.getUTCFullYear(), currentDateInIST.getUTCMonth() + 1, 0));
   const displayFormat: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric', timeZone: IST_TIMEZONE };
   const monthDisplay = new Intl.DateTimeFormat('en-US', displayFormat).format(startOfMonthDate);
-
   return {
     startOfMonth: getCurrentISODateStringInISTFromDate(startOfMonthDate),
     endOfMonth: getCurrentISODateStringInISTFromDate(endOfMonthDate),
@@ -74,17 +60,37 @@ const getMonthRangeInIST = (currentISTDateStr: string): { startOfMonth: string, 
   };
 };
 
-// Helper to format a given Date object into YYYY-MM-DD string in IST
-const getCurrentISODateStringInISTFromDate = (date: Date): string => {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: IST_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(date);
-};
 
+// --- Interfaces for Target Data ---
+interface StaffTargetDetail {
+  incentivePercentage: number;
+  target: number;
+}
+
+interface WeekTargetDataFromDB {
+  endDate: string;   // "YYYY-MM-DD"
+  label: string;     // "Week (01-07)"
+  overallTarget: number;
+  staff: Record<string, StaffTargetDetail>; // staffId -> details
+  startDate: string; // "YYYY-MM-DD"
+}
+
+interface MonthlyTargetDocument {
+  month: string; // "YYYY-MM"
+  weeks: {
+    [weekKey: string]: WeekTargetDataFromDB; // "week1", "week2", etc.
+  };
+}
+
+interface CurrentWeekTargetInfo {
+    achievedAmount: number;
+    targetAmount: number;
+    weekLabel: string;
+    startDate: string;
+    endDate: string;
+    isSet: boolean; // true if target (from DB) > 0
+    staffName?: string; // For display, if needed
+}
 
 interface StaffSalesSummary {
   totalSalesValue: number;
@@ -92,11 +98,30 @@ interface StaffSalesSummary {
   displayDate?: string;
 }
 
+// Function to get actual sales for a staff member within a date range
+async function getSalesForDateRange(staffId: string, startDate: string, endDate: string): Promise<number> {
+    let totalSales = 0;
+    const salesQuery = db.collection('dailyStaffSales')
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate);
+
+    const snapshot = await salesQuery.get();
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.staffStats && data.staffStats[staffId]) {
+            totalSales += data.staffStats[staffId].totalSalesValue || 0;
+        }
+    });
+    return parseFloat(totalSales.toFixed(2));
+}
+
+
 export async function GET(req: NextRequest) {
   console.log("API Route /api/sales/vendor-history called");
   try {
     const { searchParams } = new URL(req.url);
     const staffId = searchParams.get('staffId');
+    const staffName = searchParams.get('staffName') || 'Staff'; // Optional: Pass staff name for display
     const mode = searchParams.get('mode') || 'stats'; 
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '30', 10);
@@ -107,83 +132,92 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'Staff ID is required.' }, { status: 400 });
     }
     
-    const todayStrIST = getCurrentISODateStringInIST(); // This directly gives the IST calendar date string
+    const todayStrIST = getCurrentISODateStringInIST();
     console.log(`API determined today's date string for querying (IST) as: ${todayStrIST}`);
 
     if (mode === 'stats') {
-      // For displayDate for "today", we need a Date object that represents today in IST
       const todayDateForDisplay = getDateInIST(todayStrIST); 
-      const weekRange = getWeekRangeInIST(todayStrIST);
-      const monthRange = getMonthRangeInIST(todayStrIST);
-
       const todayDisplayFormat: Intl.DateTimeFormatOptions = { weekday: 'short', month: 'short', day: 'numeric', timeZone: IST_TIMEZONE };
       const todayDisplay = new Intl.DateTimeFormat('en-US', todayDisplayFormat).format(todayDateForDisplay);
 
-      const periodsToQuery = [
-        { name: 'today', start: todayStrIST, end: todayStrIST, display: todayDisplay },
-        { name: 'thisWeek', start: weekRange.startOfWeek, end: weekRange.endOfWeek, display: weekRange.display },
-        { name: 'thisMonth', start: monthRange.startOfMonth, end: monthRange.endOfMonth, display: monthRange.display },
-      ];
-
-      const stats: Record<string, StaffSalesSummary> = {};
-      // ... (rest of the stats logic is expected to be correct now that todayStrIST is accurate)
-      for (const p of periodsToQuery) {
-        let totalValue = 0;
-        let totalPackets = 0;
-        
-        console.log(`[Stats] Querying for period: ${p.name}, start: ${p.start}, end: ${p.end}`);
-        
-        if (p.name === 'today') {
-            const todayDocRef = db.collection('dailyStaffSales').doc(p.start);
-            const docSnap = await todayDocRef.get();
-            if (docSnap.exists) {
-                const data = docSnap.data();
-                if (data && data.staffStats && data.staffStats[staffId]) {
-                    totalValue = data.staffStats[staffId].totalSalesValue || 0;
-                    totalPackets = data.staffStats[staffId].totalTransactions || 0;
-                }
-            }
-            console.log(`[Stats] Today's direct doc fetch for ID '${p.start}': exists=${docSnap.exists}, value=${totalValue}, packets=${totalPackets}`);
-        } else { 
-            const dailyStaffSalesQuery = db.collection('dailyStaffSales')
-              .where('date', '>=', p.start)
-              .where('date', '<=', p.end);
-            
-            const snapshot = await dailyStaffSalesQuery.get();
-            snapshot.forEach(doc => {
-              const data = doc.data();
-              if (data.staffStats && data.staffStats[staffId]) {
-                totalValue += data.staffStats[staffId].totalSalesValue || 0;
-                totalPackets += data.staffStats[staffId].totalTransactions || 0;
-              }
-            });
-            console.log(`[Stats] Period ${p.name} query: count=${snapshot.size}, value=${totalValue}, packets=${totalPackets}`);
-        }
-        
-        stats[p.name] = { 
-            totalSalesValue: parseFloat(totalValue.toFixed(2)), 
-            totalTransactions: totalPackets,
-            displayDate: p.display
-        };
+      // 1. Get Today's Sales
+      let todaySalesValue = 0;
+      let todayTransactions = 0;
+      const todayDocRef = db.collection('dailyStaffSales').doc(todayStrIST);
+      const todayDocSnap = await todayDocRef.get();
+      if (todayDocSnap.exists) {
+          const data = todayDocSnap.data();
+          if (data && data.staffStats && data.staffStats[staffId]) {
+              todaySalesValue = data.staffStats[staffId].totalSalesValue || 0;
+              todayTransactions = data.staffStats[staffId].totalTransactions || 0;
+          }
       }
-      console.log("[Stats] Final stats object from API:", JSON.stringify(stats));
-      return NextResponse.json({ stats });
+      const todayStats: StaffSalesSummary = {
+          totalSalesValue: parseFloat(todaySalesValue.toFixed(2)),
+          totalTransactions: todayTransactions,
+          displayDate: todayDisplay
+      };
+
+      // 2. Get Current Week's Target and Achievement
+      let currentWeekTargetData: CurrentWeekTargetInfo | null = null;
+      const currentMonthId = todayStrIST.substring(0, 7); // YYYY-MM
+      
+      const monthlyTargetRef = db.collection('monthlyTargets').doc(currentMonthId);
+      const monthlyTargetDoc = await monthlyTargetRef.get();
+
+      if (monthlyTargetDoc.exists) {
+          const data = monthlyTargetDoc.data() as MonthlyTargetDocument;
+          if (data && data.weeks) {
+              for (const weekKey in data.weeks) {
+                  const weekInfo = data.weeks[weekKey];
+                  if (todayStrIST >= weekInfo.startDate && todayStrIST <= weekInfo.endDate) {
+                      // Found the current week
+                      const staffTargetDetails = weekInfo.staff?.[staffId];
+                      const targetAmount = staffTargetDetails?.target || 0;
+                      
+                      const achievedAmount = await getSalesForDateRange(staffId, weekInfo.startDate, weekInfo.endDate);
+
+                      currentWeekTargetData = {
+                          achievedAmount,
+                          targetAmount,
+                          weekLabel: weekInfo.label,
+                          startDate: weekInfo.startDate,
+                          endDate: weekInfo.endDate,
+                          isSet: targetAmount > 0,
+                          staffName: staffTargetDetails && staffName ? staffName : undefined
+                      };
+                      console.log(`[Stats] Found current week target for ${staffId} in ${currentMonthId}/${weekKey}: Target=${targetAmount}, Achieved=${achievedAmount}`);
+                      break; // Exit loop once current week is found
+                  }
+              }
+          }
+      }
+      if (!currentWeekTargetData) {
+          console.log(`[Stats] No current week target found for ${staffId} for date ${todayStrIST} in month ${currentMonthId}.`);
+      }
+
+      return NextResponse.json({ 
+          stats: {
+              today: todayStats,
+              // thisWeek and thisMonth are removed as per requirement
+          },
+          currentWeekTarget: currentWeekTargetData // New key for target data
+      });
     }
 
-    // --- Daily Summaries Mode ---
+    // --- Daily Summaries Mode (Unchanged) ---
     if (mode === 'dailySummaries') {
       let effectiveStartDate = startDateParam;
       let effectiveEndDate = endDateParam;
 
       if (!effectiveStartDate || !effectiveEndDate) {
-        const todayForDefaults = getDateInIST(todayStrIST); // Use today's IST date for defaults
+        const todayForDefaults = getDateInIST(todayStrIST);
         const defaultEndDate = new Date(todayForDefaults);
         const defaultStartDate = new Date(todayForDefaults);
-        defaultStartDate.setUTCDate(defaultEndDate.getUTCDate() - 6); // Use UTC date manipulation
+        defaultStartDate.setUTCDate(defaultEndDate.getUTCDate() - 6);
         effectiveStartDate = getCurrentISODateStringInISTFromDate(defaultStartDate);
         effectiveEndDate = getCurrentISODateStringInISTFromDate(defaultEndDate);
       }
-      // ... (rest of dailySummaries logic) ...
       const dailySummariesList: { date: string, totalSalesValue: number, totalTransactions: number }[] = [];
       const dailyStaffSalesQuery = db.collection('dailyStaffSales')
         .where('date', '>=', effectiveStartDate)
@@ -204,16 +238,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ dailySummaries: dailySummariesList });
     }
 
-    // --- Transactions Mode ---
+    // --- Transactions Mode (Date calculation for filters uses helpers) ---
     if (mode === 'transactions') {
       let effectiveStartDate = startDateParam;
       let effectiveEndDate = endDateParam;
 
+      // If startDateParam or endDateParam are not provided by custom filter,
+      // use the periodType ('today', 'thisWeek', 'thisMonth') passed from client.
+      // The client now calculates these for the API call.
+      // If neither custom dates nor periodType-derived dates are there, default to today.
       if (!effectiveStartDate || !effectiveEndDate) {
-        effectiveStartDate = todayStrIST; 
-        effectiveEndDate = todayStrIST;
+          // This case should ideally be handled by client sending explicit dates
+          // based on 'today', 'thisWeek', 'thisMonth' buttons.
+          // Fallback to today if params are missing for some reason.
+          console.warn("[Transactions] Start/End date params missing, defaulting to today.");
+          effectiveStartDate = todayStrIST; 
+          effectiveEndDate = todayStrIST;
       }
-      // ... (rest of transactions logic) ...
+      
       let query = db.collection('salesTransactions')
         .where('staffId', '==', staffId)
         .where('status', '==', 'SOLD')
@@ -267,6 +309,6 @@ export async function GET(req: NextRequest) {
         console.error("Potential Firestore Index issue. Details:", error.details || error.message);
         return NextResponse.json({ message: 'Query requires a Firestore index. Please check server logs or Firebase console.', details: error.message }, { status: 500 });
     }
-    return NextResponse.json({ message: errorMessage, details: error.message }, { status: 500 });
+    return NextResponse.json({ message: errorMessage, details: error.details || error.message }, { status: 500 });
   }
 }

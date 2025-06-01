@@ -1,7 +1,6 @@
-// src/app/vendor/sales-history/page.tsx
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from 'react'; // Added useMemo
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useUser } from '@/context/UserContext';
@@ -10,18 +9,20 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, ArrowLeft, List, CalendarDays, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ArrowLeft, List, CalendarDays, RefreshCw, ChevronLeft, ChevronRight, Target, TrendingUp, TrendingDown } from 'lucide-react'; // Added Target
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
+import { Progress } from "@/components/ui/progress"; // Assuming you have a Progress component or will add one
 
+// --- Interfaces (Matching API Response) ---
 interface SaleTransaction {
   id: string;
   articleNo: string;
   productName?: string;
   weightGrams: number;
   calculatedSellPrice: number;
-  timestamp: string;
-  dateOfSale: string;
+  timestamp: string; // ISO String
+  dateOfSale: string; // YYYY-MM-DD
 }
 
 interface StaffSalesSummaryType {
@@ -30,11 +31,26 @@ interface StaffSalesSummaryType {
   displayDate?: string;
 }
 
-interface OverallStats {
-  today: StaffSalesSummaryType;
-  thisWeek: StaffSalesSummaryType;
-  thisMonth: StaffSalesSummaryType;
+// New interface for weekly target data from API
+interface CurrentWeekTargetInfo {
+    achievedAmount: number;
+    targetAmount: number;
+    weekLabel: string;
+    startDate: string;
+    endDate: string;
+    isSet: boolean;
+    staffName?: string;
 }
+
+interface OverallStats { // Only today's stats remain here
+  today: StaffSalesSummaryType;
+}
+
+interface ApiStatsResponse { // To handle the full API response structure
+    stats: OverallStats;
+    currentWeekTarget: CurrentWeekTargetInfo | null;
+}
+
 
 interface DailySummaryViewData {
   date: string;
@@ -52,11 +68,8 @@ interface PaginationInfo {
 type ViewMode = 'dailySummary' | 'transactions';
 type TransactionPeriod = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
 
-// Client-side date helpers
-const IST_TIMEZONE_CLIENT = 'Asia/Kolkata'; // Use a distinct name for client-side constant
+const IST_TIMEZONE_CLIENT = 'Asia/Kolkata';
 const getISODateStringForClient = (date: Date): string => {
-  // This function should reliably produce YYYY-MM-DD for the given Date object's "wall clock" time
-  // Assuming the Date object has already been adjusted to represent IST if needed.
   const year = date.getFullYear();
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
   const day = date.getDate().toString().padStart(2, '0');
@@ -73,6 +86,8 @@ export default function VendorSalesHistoryPage() {
   const router = useRouter();
 
   const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
+  const [currentWeekTarget, setCurrentWeekTarget] = useState<CurrentWeekTargetInfo | null>(null); // State for new target card
+
   const [dailySummaries, setDailySummaries] = useState<DailySummaryViewData[]>([]);
   const [transactions, setTransactions] = useState<SaleTransaction[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
@@ -86,7 +101,6 @@ export default function VendorSalesHistoryPage() {
   const [currentTransactionPeriod, setCurrentTransactionPeriod] = useState<TransactionPeriod | null>(null);
   const [customDateFilters, setCustomDateFilters] = useState({ startDate: '', endDate: '' });
   
-  // Derive default date ranges using useMemo to avoid re-calculating on every render
   const defaultDateRanges = useMemo(() => {
     const nowIST = getNowInClientIST();
     const today = getISODateStringForClient(nowIST);
@@ -102,10 +116,10 @@ export default function VendorSalesHistoryPage() {
             end: getISODateStringForClient(endLast7) 
         },
     };
-  }, []); // Empty dependency array: calculate once
+  }, []);
 
   const [dailySummaryRange, setDailySummaryRange] = useState({ 
-    startDate: defaultDateRanges.last7Days.start, // Default to last 7 days
+    startDate: defaultDateRanges.last7Days.start,
     endDate: defaultDateRanges.last7Days.end 
   });
 
@@ -115,23 +129,26 @@ export default function VendorSalesHistoryPage() {
       router.push('/vendor/login');
       return;
     }
-    const fetchStatsData = async () => { // Renamed to avoid conflict
+    const fetchOverallData = async () => { // Renamed to fetch all initial data
       setIsLoadingStats(true); setError(null);
       try {
-        const response = await fetch(`/api/sales/vendor-history?staffId=${user.id}&mode=stats`);
+        // Pass staffName if you want it back for display, API makes it optional
+        const response = await fetch(`/api/sales/vendor-history?staffId=${user.id}&staffName=${encodeURIComponent(user.name)}&mode=stats`);
         if (!response.ok) {
             const errData = await response.json();
             throw new Error(errData.message || 'Failed to fetch sales statistics');
         }
-        const data = await response.json();
+        const data: ApiStatsResponse = await response.json();
         setOverallStats(data.stats);
-        if(data.stats?.today?.totalSalesValue === undefined) { // Check if today's data specifically is missing
+        setCurrentWeekTarget(data.currentWeekTarget); // Set the new target data
+
+        if(data.stats?.today?.totalSalesValue === undefined) {
             console.warn("Today's stats might be missing from API response", data.stats);
         }
       } catch (err: any) { setError(err.message); toast.error(err.message); }
       finally { setIsLoadingStats(false); }
     };
-    fetchStatsData();
+    fetchOverallData();
   }, [user, router]);
 
   const fetchDailySummaries = useCallback(async (start: string, end: string) => {
@@ -145,9 +162,8 @@ export default function VendorSalesHistoryPage() {
       setDailySummaries(data.dailySummaries || []);
     } catch (err: any) { setError(err.message); toast.error(err.message); setDailySummaries([]); }
     finally { setIsLoadingDaily(false); }
-  }, [user]); // Removed dailySummaryRange from deps, pass dates directly
+  }, [user]);
 
-  // Fetch daily summaries when range is set/changed OR viewMode becomes 'dailySummary'
   useEffect(() => {
     if (viewMode === 'dailySummary' && dailySummaryRange.startDate && dailySummaryRange.endDate) {
         fetchDailySummaries(dailySummaryRange.startDate, dailySummaryRange.endDate);
@@ -157,8 +173,6 @@ export default function VendorSalesHistoryPage() {
   const fetchTransactions = useCallback(async (periodType: TransactionPeriod, page: number = 1, customSDate?: string, customEDate?: string) => {
     if (!user?.id) return;
     setIsLoadingTransactions(true); setError(null);
-    // setTransactions([]); // Clear previous only if it's a new type of request, not for pagination
-    // setPagination(null);  
     setCurrentTransactionPeriod(periodType);
 
     const params = new URLSearchParams({ staffId: user.id, mode: 'transactions', page: String(page), limit: '30' });
@@ -168,16 +182,14 @@ export default function VendorSalesHistoryPage() {
     if (periodType === 'today') {
       sDate = getISODateStringForClient(nowIST); eDate = sDate;
     } else if (periodType === 'thisWeek') {
-      const endOfWeek = new Date(nowIST);
-      const startOfWeek = new Date(nowIST);
-      const day = nowIST.getDay();
-      const diffToMonday = nowIST.getDate() - day + (day === 0 ? -6 : 1);
-      startOfWeek.setDate(diffToMonday);
-      sDate = getISODateStringForClient(startOfWeek); eDate = getISODateStringForClient(endOfWeek); // Note: endOfWeek needs to be end of current week
-      const tempEnd = new Date(startOfWeek);
-      tempEnd.setDate(startOfWeek.getDate() + 6);
-      eDate = getISODateStringForClient(tempEnd);
-
+      // For "This Week" filter, use Monday-Sunday logic
+      const currentDay = nowIST.getDay(); // 0 (Sun) - 6 (Sat)
+      const diffToMonday = nowIST.getDate() - currentDay + (currentDay === 0 ? -6 : 1); // Adjust for Sunday
+      const startOfWeek = new Date(nowIST.setDate(diffToMonday));
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      sDate = getISODateStringForClient(startOfWeek);
+      eDate = getISODateStringForClient(endOfWeek);
     } else if (periodType === 'thisMonth') {
       const startOfMonth = new Date(nowIST.getFullYear(), nowIST.getMonth(), 1);
       const endOfMonth = new Date(nowIST.getFullYear(), nowIST.getMonth() + 1, 0);
@@ -204,7 +216,6 @@ export default function VendorSalesHistoryPage() {
     if (viewMode === 'transactions' && !currentTransactionPeriod) {
         fetchTransactions('today', 1);
     }
-    // Daily summary is fetched by its own effect based on dailySummaryRange
   }, [viewMode, currentTransactionPeriod, fetchTransactions]);
 
 
@@ -217,7 +228,6 @@ export default function VendorSalesHistoryPage() {
         toast.error("Start date cannot be after end date.");
         return;
     }
-
     if (viewMode === 'dailySummary') {
         setDailySummaryRange({ startDate: customDateFilters.startDate, endDate: customDateFilters.endDate});
     } else if (viewMode === 'transactions') {
@@ -243,10 +253,104 @@ export default function VendorSalesHistoryPage() {
       </CardContent>
     </Card>
   );
-  
-  // Correctly get today's date for input max attribute
-  const todayForInputMax = useMemo(() => getISODateStringForClient(new Date()), []);
 
+  // New Target Card Component
+  const WeeklyTargetCard = ({ data, isLoading }: { data: CurrentWeekTargetInfo | null; isLoading: boolean }) => {
+    if (isLoading) {
+      return (
+        <Card className="md:col-span-2"> {/* Span 2 columns if you want it wider */}
+          <CardHeader><CardTitle>This Week's Target</CardTitle></CardHeader>
+          <CardContent className="flex justify-center items-center h-24">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </CardContent>
+        </Card>
+      );
+    }
+    if (!data) {
+      return (
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center"><Target className="mr-2 h-5 w-5 text-muted-foreground"/>This Week's Target</CardTitle>
+            <CardDescription>Data for current week's target is unavailable.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-center py-4">Could not load target information.</p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const { achievedAmount, targetAmount, weekLabel, isSet, staffName, startDate, endDate } = data; // Added startDate, endDate
+    
+    // Calculate actual percentage without premature rounding for display
+    const rawPercentage = targetAmount > 0 ? (achievedAmount / targetAmount) * 100 : 0;
+    
+    // For the progress bar, cap at 100
+    const progressBarPercentage = Math.min(rawPercentage, 100); 
+
+    const isTargetExceeded = rawPercentage > 100 && targetAmount > 0; // Use rawPercentage for more accurate check
+
+    // Format dates for display
+    const formatDatePart = (dateString: string) => {
+        if (!dateString || dateString.length < 10) return '';
+        // Assuming dateString is "YYYY-MM-DD"
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+            return `${parts[2]}-${parts[1]}`; // DD-MM
+        }
+        return dateString.substring(5); // Fallback MM-DD
+    };
+    const displayStartDate = formatDatePart(startDate);
+    const displayEndDate = formatDatePart(endDate);
+
+    return (
+      <Card className="md:col-span-2">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center text-lg sm:text-xl">
+            <Target className="mr-2 h-5 w-5 text-primary"/>
+            {staffName ? `${staffName}'s Target` : "This Week's Target"} 
+          </CardTitle>
+          {/* Displaying Week Label and the actual date range */}
+          <CardDescription>{weekLabel} ({displayStartDate} to {displayEndDate})</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!isSet ? (
+            <p className="text-center text-muted-foreground py-4">Target not set for this week.</p>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex justify-between items-baseline">
+                <span className={`text-2xl font-bold ${isTargetExceeded ? 'text-green-500' : ''}`}>
+                  ₹{achievedAmount.toFixed(2)}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  / ₹{targetAmount.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Achieved</span>
+                <span>Target</span>
+              </div>
+              <Progress value={progressBarPercentage} className="h-3 mt-2" />
+              
+              {/* Updated conditional rendering for percentage text */}
+              {isTargetExceeded ? (
+                <p className="text-sm text-green-600 font-medium flex items-center">
+                  <TrendingUp className="mr-1 h-4 w-4"/> Target Achieved!
+                </p>
+              ) : targetAmount > 0 ? ( // Only show percentage if target is set
+                <p className="text-sm text-orange-600 font-medium flex items-center">
+                    {rawPercentage.toFixed(2)}% of target reached
+                </p>
+              ) : null}
+
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+  
+  const todayForInputMax = useMemo(() => getISODateStringForClient(new Date()), []);
 
   if (!user) { 
     return (<main className="flex min-h-screen flex-col items-center justify-center p-4"><Loader2 className="h-12 w-12 animate-spin text-primary" /></main>);
@@ -255,21 +359,20 @@ export default function VendorSalesHistoryPage() {
   return (
     <main className="min-h-screen p-4 md:p-8 bg-slate-50 dark:bg-slate-900">
         <div className="max-w-6xl mx-auto">
-            {/* Header */}
             <div className="mb-6 flex flex-wrap gap-2 justify-between items-center">
             <Link href="/vendor/scan" passHref><Button variant="outline" size="sm"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Scan</Button></Link>
             <h1 className="text-xl md:text-2xl font-semibold">Sales Dashboard - {user.name}</h1>
             <Button variant="ghost" size="sm" onClick={() => { logout(); router.push('/'); }}>Logout</Button>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats Cards - MODIFIED */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <StatCard title="Today's Sales" value={overallStats?.today?.totalSalesValue} packets={overallStats?.today?.totalTransactions} displayDate={overallStats?.today?.displayDate} />
-            <StatCard title="This Week's Sales" value={overallStats?.thisWeek?.totalSalesValue} packets={overallStats?.thisWeek?.totalTransactions} displayDate={overallStats?.thisWeek?.displayDate} />
-            <StatCard title="This Month's Sales" value={overallStats?.thisMonth?.totalSalesValue} packets={overallStats?.thisMonth?.totalTransactions} displayDate={overallStats?.thisMonth?.displayDate} />
+              <StatCard title="Today's Sales" value={overallStats?.today?.totalSalesValue} packets={overallStats?.today?.totalTransactions} displayDate={overallStats?.today?.displayDate} />
+              {/* WeeklyTargetCard will take up 2 columns if md:col-span-2 is used */}
+              <WeeklyTargetCard data={currentWeekTarget} isLoading={isLoadingStats} />
+              {/* Removed: This Week's Sales and This Month's Sales cards */}
             </div>
             
-            {/* View Options & Filters Card */}
             <Card className="mb-6">
                 <CardHeader><CardTitle>View Options & Filters</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -301,13 +404,12 @@ export default function VendorSalesHistoryPage() {
                 </CardContent>
             </Card>
 
-            {/* Data Display Card */}
             <Card>
                 <CardHeader>
                     <CardTitle>{viewMode === 'dailySummary' ? 'Daily Sales Summary' : 'Individual Transactions'}</CardTitle>
                     <CardDescription>
                         {viewMode === 'dailySummary' ? `Showing daily totals for ${dailySummaryRange.startDate || 'default range'} to ${dailySummaryRange.endDate || ''}` : 
-                        currentTransactionPeriod ? `Showing ${currentTransactionPeriod.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} transactions` : 'Select a period or apply custom dates to view transactions.'}
+                        currentTransactionPeriod ? `Showing ${currentTransactionPeriod.replace(/([A-Z])/g, ' $1').replace(/^./, (str: string) => str.toUpperCase())} transactions` : 'Select a period or apply custom dates to view transactions.'}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>

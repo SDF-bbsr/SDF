@@ -42,26 +42,50 @@ function getWeekDefinitions(year: number, month: number) { // month is 1-indexed
     const formatDay = (d: number) => String(d).padStart(2, '0');
     const monthStrFull = String(month).padStart(2, '0'); // Month for YYYY-MM-DD
 
-    const addWeek = (key: string, startDay: number, endDayNum: number) => {
-        const actualEndDay = Math.min(endDayNum, daysInMonth);
+    // Inner helper to add a week if it's valid
+    const tryAddWeek = (key: string, startDay: number, endDayProposed: number) => {
+        if (startDay > daysInMonth) { // If the week's start day is beyond the month's end, do nothing
+            return;
+        }
+
+        const actualEndDay = Math.min(endDayProposed, daysInMonth);
+        
+        // This condition should ideally not be met if startDay checks are done prior,
+        // but as a safeguard if startDay somehow ended up > actualEndDay.
+        if (startDay > actualEndDay) {
+            return;
+        }
+
         const dayList: string[] = [];
         for (let d = startDay; d <= actualEndDay; d++) {
             dayList.push(`${year}-${monthStrFull}-${formatDay(d)}`);
         }
-        weeks.push({
-            key: key,
-            label: `Week (${formatDay(startDay)}-${formatDay(actualEndDay)})`,
-            startDateFull: `${year}-${monthStrFull}-${formatDay(startDay)}`,
-            endDateFull: `${year}-${monthStrFull}-${formatDay(actualEndDay)}`,
-            days: dayList,
-        });
+
+        // Only push if there are days in the list (i.e., startDay <= actualEndDay)
+        if (dayList.length > 0) {
+            weeks.push({
+                key: key,
+                label: `Week (${formatDay(startDay)}-${formatDay(actualEndDay)})`,
+                startDateFull: `${year}-${monthStrFull}-${formatDay(startDay)}`,
+                endDateFull: `${year}-${monthStrFull}-${formatDay(actualEndDay)}`,
+                days: dayList,
+            });
+        }
     };
 
-    addWeek('week1', 1, 7);
-    if (daysInMonth >= 8) addWeek('week2', 8, 14);
-    if (daysInMonth >= 15) addWeek('week3', 15, 21);
-    if (daysInMonth >= 22) addWeek('week4', 22, 28);
-    if (daysInMonth >= 29) addWeek('week5', 29, daysInMonth);
+    // Week 1: 1-7
+    tryAddWeek('week1', 1, 7);
+    
+    // Week 2: 8-14
+    tryAddWeek('week2', 8, 14);
+
+    // Week 3: 15-21
+    tryAddWeek('week3', 15, 21);
+
+    // Week 4: 22 to end of month
+    // This will only add if day 22 is within the month.
+    // endDayProposed is daysInMonth, so actualEndDay will be daysInMonth.
+    tryAddWeek('week4', 22, daysInMonth); 
     
     return weeks;
 }
@@ -100,7 +124,7 @@ export async function GET(req: NextRequest) {
         let targetsDoc = await targetsRef.get();
         let monthlyTargetData: MonthlyTargetDoc;
         
-        const weekDefinitions = getWeekDefinitions(year, month);
+        const weekDefinitions = getWeekDefinitions(year, month); // <-- Uses the updated function
         const defaultStaffTargetDetail: StaffTargetDetail = { target: 0, incentivePercentage: 0.5 }; // Default incentive 0.5%
 
         if (!targetsDoc.exists) {
@@ -108,7 +132,7 @@ export async function GET(req: NextRequest) {
             weekDefinitions.forEach(weekDef => {
                 const staffTargets: { [staffId: string]: StaffTargetDetail } = {};
                 staffFoundInSales.forEach(staffId => {
-                    staffTargets[staffId] = { ...defaultStaffTargetDetail }; // Create a new object
+                    staffTargets[staffId] = { ...defaultStaffTargetDetail }; 
                 });
                 defaultWeeks[weekDef.key] = {
                     label: weekDef.label,
@@ -121,15 +145,14 @@ export async function GET(req: NextRequest) {
             monthlyTargetData = { month: monthYear, weeks: defaultWeeks };
         } else {
             monthlyTargetData = targetsDoc.data() as MonthlyTargetDoc;
-            // Ensure all staff and weeks have entries, using new definitions
             const updatedWeeks: MonthlyTargetDoc['weeks'] = {};
             weekDefinitions.forEach(weekDef => {
                 const existingWeek = monthlyTargetData.weeks[weekDef.key];
                 const staffTargets: { [staffId: string]: StaffTargetDetail } = {};
                 staffFoundInSales.forEach(staffId => {
                     staffTargets[staffId] = existingWeek?.staff?.[staffId] 
-                                            ? { ...existingWeek.staff[staffId] } // existing
-                                            : { ...defaultStaffTargetDetail }; // default for new staff in existing week
+                                            ? { ...existingWeek.staff[staffId] } 
+                                            : { ...defaultStaffTargetDetail }; 
                 });
                 updatedWeeks[weekDef.key] = {
                     label: existingWeek?.label || weekDef.label,
@@ -171,7 +194,7 @@ export async function GET(req: NextRequest) {
                 }
             });
 
-            const weekTargetInfo = monthlyTargetData.weeks[weekDef.key];
+            const weekTargetInfo = monthlyTargetData.weeks[weekDef.key]; // weekDef.key will now only be week1-week4
             const responseStaffData: { [staffId: string]: any } = {};
             let weekTotalIncentives = 0;
 
@@ -181,9 +204,9 @@ export async function GET(req: NextRequest) {
                 const target = staffTargetDetail.target;
                 const incentivePct = staffTargetDetail.incentivePercentage;
 
-                const isTargetMet = sales > target;
+                const isTargetMet = sales > target; // Note: original code was sales >= target for isTargetMet, sales > target for incentive calculation
                 let incentive: number | string = "Not Eligible";
-                if (isTargetMet && target > 0 && incentivePct > 0) {
+                if (isTargetMet && target > 0 && incentivePct > 0) { // Using sales > target for incentive
                     incentive = parseFloat((sales * (incentivePct / 100)).toFixed(2));
                     weekTotalIncentives += incentive;
                 } else if (target <= 0) {
@@ -197,7 +220,7 @@ export async function GET(req: NextRequest) {
                     sales: sales,
                     target: target,
                     incentivePercentage: incentivePct,
-                    isTargetMet: sales >= target, // For coloring
+                    isTargetMet: sales >= target, // For coloring, uses >=
                     incentive: incentive,
                 };
             });
@@ -209,8 +232,8 @@ export async function GET(req: NextRequest) {
                 endDate: weekDef.endDateFull,
                 overall: {
                     sales: parseFloat(weekOverallSales.toFixed(2)),
-                    target: weekTargetInfo.overallTarget,
-                    isTargetMet: weekOverallSales >= weekTargetInfo.overallTarget,
+                    target: weekTargetInfo.overallTarget, // This will be the sum from inputs or 0 if not set
+                    isTargetMet: weekOverallSales >= weekTargetInfo.overallTarget, // Comparison is with overall target from DB
                 },
                 staff: responseStaffData,
                 totalIncentives: parseFloat(weekTotalIncentives.toFixed(2)),
@@ -221,7 +244,7 @@ export async function GET(req: NextRequest) {
             selectedMonth: monthYear,
             staffDetails: staffDetails,
             weeklyData: weeklyDataResponse,
-            rawTargetsFromDB: monthlyTargetData.weeks // Crucial for initializing form inputs
+            rawTargetsFromDB: monthlyTargetData.weeks 
         });
 
     } catch (error: any) {
@@ -232,7 +255,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
-        const { month, weeks: formWeeksData } = await req.json(); // formWeeksData is what frontend sends
+        const { month, weeks: formWeeksData } = await req.json(); 
 
         if (!month || !/^\d{4}-\d{2}$/.test(month)) {
             return NextResponse.json({ message: 'Valid month (YYYY-MM) is required.' }, { status: 400 });
@@ -245,16 +268,16 @@ export async function POST(req: NextRequest) {
         const [yearStr, monthStr] = month.split('-');
         const year = parseInt(yearStr, 10);
         const m = parseInt(monthStr, 10);
-        const currentWeekDefinitions = getWeekDefinitions(year, m);
+        const currentWeekDefinitions = getWeekDefinitions(year, m); // <-- Uses the updated function
 
         const dataToSave: Partial<MonthlyTargetDoc> = {
             month: month,
             weeks: {} as MonthlyTargetDoc['weeks']
         };
 
-        currentWeekDefinitions.forEach(weekDef => {
+        currentWeekDefinitions.forEach(weekDef => { // Will iterate week1-week4 (or fewer)
             const receivedWeekData = formWeeksData[weekDef.key];
-            if (!receivedWeekData) return; // Skip if frontend didn't send data for this defined week
+            if (!receivedWeekData) return; 
 
             const staffDataToSave: { [staffId: string]: StaffTargetDetail } = {};
             if (receivedWeekData.staff && typeof receivedWeekData.staff === 'object') {
@@ -271,12 +294,16 @@ export async function POST(req: NextRequest) {
                 label: receivedWeekData.label || weekDef.label,
                 startDate: receivedWeekData.startDate || weekDef.startDateFull,
                 endDate: receivedWeekData.endDate || weekDef.endDateFull,
-                overallTarget: parseFloat(receivedWeekData.overallTarget) || 0,
+                overallTarget: parseFloat(receivedWeekData.overallTarget) || 0, // This is calculated on frontend and sent
                 staff: staffDataToSave
             };
         });
         
-
+        // Using set with merge:true will update or create the document.
+        // If there was old `week5` data within the `weeks` map in Firestore,
+        // this operation will not remove it if `dataToSave.weeks` doesn't contain `week5`.
+        // However, the GET request logic already filters based on currentWeekDefinitions,
+        // so old `week5` data won't be loaded or displayed.
         await targetsRef.set(dataToSave, { merge: true });
 
         return NextResponse.json({ message: 'Targets and incentives updated successfully.' });
