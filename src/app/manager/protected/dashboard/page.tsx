@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, ShoppingBag, Users, Package } from 'lucide-react'; // Clock icon can be removed if not used elsewhere, as hourly data is now direct
+import { Loader2, ShoppingBag, Users, Package, Target, CalendarDays, TrendingUp } from 'lucide-react'; // Ensure all icons are imported
 import { 
   ResponsiveContainer, 
   LineChart, Line, 
@@ -14,9 +14,9 @@ import {
   CartesianGrid, Tooltip, 
   Legend, BarChart, Bar
 } from 'recharts';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'; // Import ScrollArea and ScrollBar
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
-// --- Interface definitions ---
+// --- Interface definitions (ensure these match your API response) ---
 interface SaleSummary {
   totalValue: number;
   totalPackets: number;
@@ -37,23 +37,33 @@ interface ItemSaleSummary {
 }
 interface HourlySalePoint {
   hour: string; // e.g., "09 AM", "05 PM"
-  // hourNumeric is mainly for API side sorting, frontend uses 'hour' for display
   totalSales: number;
   transactionCount: number;
 }
 interface TodaySnapshot {
   totalSales: number;
-  // totalReturns: number; // Can be removed if not being displayed based on earlier discussion
   salesPerStaff: StaffSaleSummary[];
   salesByHour?: HourlySalePoint[];
 }
+
+// MODIFIED WeeklyPacingInfo to match API
+interface WeeklyPacingInfo {
+  weekLabel: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  overallTarget: number;
+  achievedInWeekSoFar: number;
+  remainingTargetAmountOverall: number; // Overall remaining for the week
+  daysLeftInWeekIncludingToday: number;
+  targetForTodayAndAverageRemaining: number | null; // THIS IS THE KEY NEW FIELD
+  isTargetConfigured: boolean;
+}
+
 interface DashboardData {
   todaySnapshot: TodaySnapshot;
   salesTrendData: DailySalePoint[];
   topSellingItems: ItemSaleSummary[];
-  targets: {
-    dailyStoreTarget: number;
-  };
+  weeklyPacing: WeeklyPacingInfo; 
 }
 // --- End Interface definitions ---
 
@@ -74,8 +84,10 @@ export default function ManagerDashboardPage() {
           throw new Error(errData.message || 'Failed to load dashboard data');
         }
         const data: DashboardData = await response.json();
+        console.log("Fetched Dashboard Data for Pacing:", data); // For debugging
         setDashboardData(data);
-      } catch (err: any) {
+      } catch (err: any)
+{
         setError(err.message);
       } finally {
         setIsLoading(false);
@@ -106,33 +118,94 @@ export default function ManagerDashboardPage() {
     return <div className="flex flex-1 items-center justify-center p-4">No dashboard data available.</div>;
   }
 
-  const todayProgress = dashboardData.targets?.dailyStoreTarget
-    ? (dashboardData.todaySnapshot.totalSales / dashboardData.targets.dailyStoreTarget) * 100
-    : 0;
+  // Destructure for easier access
+  const { todaySnapshot, weeklyPacing } = dashboardData;
 
-  // Check if there's any sales data for the hourly chart
-  const hasSalesByHourData = dashboardData.todaySnapshot.salesByHour && 
-                             dashboardData.todaySnapshot.salesByHour.some(h => h.totalSales > 0 || h.transactionCount > 0);
+  // Calculate progress for TODAY against its dynamic daily target
+  const todayProgressVsDailyTarget = weeklyPacing?.isTargetConfigured && 
+                                    weeklyPacing.targetForTodayAndAverageRemaining !== null && 
+                                    weeklyPacing.targetForTodayAndAverageRemaining > 0
+    ? (todaySnapshot.totalSales / weeklyPacing.targetForTodayAndAverageRemaining) * 100
+    : 0;
+  
+  // Fallback if targetForToday is 0 (meaning already met or not applicable)
+  // but sales are made, show 100% or a specific state.
+  // If targetForToday is 0 because it's met, and today's sales are >0, it means overachieving.
+  const displayProgress = (weeklyPacing?.isTargetConfigured && weeklyPacing.targetForTodayAndAverageRemaining === 0 && todaySnapshot.totalSales > 0)
+    ? 100 
+    : Math.min(todayProgressVsDailyTarget, 100);
+
+
+  const hasSalesByHourData = todaySnapshot.salesByHour?.some(h => h.totalSales > 0 || h.transactionCount > 0);
 
   return (
     <> 
-      {/* Today's Snapshot */}
+      {/* Today's Snapshot & Weekly Pacing */}
       <section>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* Total Sales Today Card - Main value is today's sales, "vs Target" is weekly */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Sales Today</CardTitle>
               <ShoppingBag className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">₹{dashboardData.todaySnapshot.totalSales.toFixed(2)}</div>
-              {dashboardData.targets?.dailyStoreTarget && (
+              <div className="text-2xl font-bold">₹{todaySnapshot.totalSales.toFixed(2)}</div>
+              
+              {weeklyPacing && weeklyPacing.isTargetConfigured ? (
                 <>
-                  <p className="text-xs text-muted-foreground">
-                      vs Target ₹{dashboardData.targets.dailyStoreTarget.toFixed(2)}
-                  </p>
-                  <Progress value={Math.min(todayProgress, 100)} className="mt-2 h-2" />
+                  {weeklyPacing.targetForTodayAndAverageRemaining !== null ? (
+                    <p className="text-xs text-muted-foreground">
+                      vs Today's Goal ₹{weeklyPacing.targetForTodayAndAverageRemaining.toFixed(2)}
+                      {weeklyPacing.weekLabel && ` (${weeklyPacing.weekLabel})`}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Pacing for {weeklyPacing.weekLabel || 'current week'}...
+                    </p>
+                  )}
+                  <Progress 
+                    value={displayProgress} 
+                    className="mt-2 mb-2 h-2" 
+                    aria-label={`${displayProgress.toFixed(0)}% of today's goal`}
+                  />
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    <div className="flex items-center">
+                      <Target className="h-3 w-3 mr-1.5 text-blue-500" />
+                      <span>
+                        Week Target: ₹{weeklyPacing.overallTarget.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex items-center">
+                      <Target className="h-3 w-3 mr-1.5 text-green-500" />
+                      <span>
+                        Week Achieved (so far): ₹{weeklyPacing.achievedInWeekSoFar.toFixed(2)}
+                      </span>
+                    </div>
+                     {weeklyPacing.remainingTargetAmountOverall <= 0 && (
+                       <div className="flex items-center">
+                          {/* <CheckCircle className="h-3 w-3 mr-1.5 text-green-600" /> Using Target for consistency */}
+                          <Target className="h-3 w-3 mr-1.5 text-green-600" />
+                          <span className="text-green-600 font-semibold">Weekly Target Achieved! 🎉</span>
+                       </div>
+                    )}
+                    {/* Message if today's goal is met/exceeded */}
+                    {weeklyPacing.targetForTodayAndAverageRemaining !== null && todaySnapshot.totalSales >= weeklyPacing.targetForTodayAndAverageRemaining && weeklyPacing.targetForTodayAndAverageRemaining > 0 && (
+                        <div className="flex items-center text-emerald-600 font-medium">
+                             {/* <TrendingUp className="h-3 w-3 mr-1.5" /> */}
+                             <span>Today's goal met/exceeded!</span>
+                        </div>
+                    )}
+                    <div className="flex items-center">
+                      <CalendarDays className="h-3 w-3 mr-1.5 text-sky-500" />
+                      <span>
+                        Days Left (Week): {weeklyPacing.daysLeftInWeekIncludingToday}
+                      </span>
+                    </div>
+                  </div>
                 </>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">Weekly target not set for current period.</p>
               )}
             </CardContent>
           </Card>
