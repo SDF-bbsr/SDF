@@ -1,0 +1,12 @@
+{
+    "crons": [
+      {
+        "path": "/api/telegram/send-daily-reports",
+        "schedule": "30-58/2 8 * * *"
+      },
+      {
+        "path": "/api/telegram/send-daily-reports",
+        "schedule": "0-28/2 9 * * *"
+      }
+    ]
+  }
