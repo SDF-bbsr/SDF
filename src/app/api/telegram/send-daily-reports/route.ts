@@ -197,8 +197,7 @@ export async function GET(req: NextRequest) { // Vercel Crons use GET by default
             } catch (userError: any) {
                 console.error(`[Cron SendDailyReports] Error processing report for chat ID ${chatId}:`, userError.message, userError.stack);
                 // Optionally notify admin or the user about the failure for their specific report
-                awai
-                t sendTelegramMessage(chatId, `Sorry ${escapeMarkdownV2(firstName)}\\, we encountered an error while generating your daily report for ${escapeMarkdownV2(yesterdayDateString)}\\. Please try requesting it manually or contact support\\.`);
+                await sendTelegramMessage(chatId, `Sorry ${escapeMarkdownV2(firstName)}\\, we encountered an error while generating your daily report for ${escapeMarkdownV2(yesterdayDateString)}\\. Please try requesting it manually or contact support\\.`);
                 failedSends++;
             }
             // Small delay to avoid hitting Telegram rate limits, especially if many users.
