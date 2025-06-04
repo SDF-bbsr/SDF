@@ -92,7 +92,7 @@ async function sendTelegramDocument(chatId: number, fileBuffer: Buffer, filename
     formData.append('document', new Blob([fileBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
     if (caption) {
         formData.append('caption', caption);
-        formData.append('caption_parse_mode', 'MarkdownV2');
+        formData.append('parse_mode', 'MarkdownV2'); // Ensure caption parse mode is set
     }
 
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`;
@@ -183,8 +183,25 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "ok" });
     }
 
+    // --- Check authentication for all other commands ---
+    // If user is not in the in-memory authenticated set, try to auto-authenticate via active subscription.
     if (!authenticatedUsers.has(chatId)) {
-        console.log(`[Bot POST] User ${chatId} not authenticated. Command: ${command}`);
+        try {
+            const subDocRef = db.collection('telegramBotSubscriptions').doc(String(chatId));
+            const docSnap = await subDocRef.get();
+            if (docSnap.exists && docSnap.data()?.isActive === true) {
+                authenticatedUsers.add(chatId);
+                console.log(`[Bot POST] User ${chatId} auto-authenticated via active subscription for command ${command}.`);
+            }
+        } catch (error) {
+            console.error(`[Bot POST] Error during auto-authentication check for chat ${chatId}:`, error);
+            // Continue, will fall into the "not authenticated" message below if still not in set
+        }
+    }
+
+    // Now, re-check authentication status. If still not authenticated, prompt for password.
+    if (!authenticatedUsers.has(chatId)) {
+        console.log(`[Bot POST] User ${chatId} not authenticated for command: ${command}. Prompting for password.`);
         await sendTelegramMessage(chatId, "You are not authenticated\\. Please use `/start` and then `/password \\<your_password\\>` to authenticate\\.");
         return NextResponse.json({ status: "ok" });
     }
@@ -401,7 +418,7 @@ export async function POST(req: NextRequest) {
                        "*Available Commands:*\n" +
                        "`/getsummary \\<YYYY\\-MM\\-DD_start\\> \\<YYYY\\-MM\\-DD_end\\>`\n" +
                        "  \\- Get daily sales summaries for the specified date range\\.\n" +
-                       "  _Example:_ `/getsummary 2024\\-01\\-01 2024\\-01\\-05`\n\n" +
+                       "  _Example:_ `/getsummary 2025\\-06\\-03 2025\\-06\\-03`\n\n" +
                        "`/exportyesterday`\n" +
                        "  \\- Export yesterday's sales transactions as an Excel file\\.\n\n" +
                        "`/subscribedaily`\n" +

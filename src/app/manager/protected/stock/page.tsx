@@ -14,8 +14,8 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
-    ChevronDown, ChevronRight, Edit3, Loader2, AlertCircle, PlusCircle, RefreshCw, ChevronsLeft, ChevronsRight, CalendarDays, Search, History // Added History icon
-} from 'lucide-react';
+    ChevronDown, ChevronRight, Edit3, Loader2, AlertCircle, PlusCircle, RefreshCw, CalendarDays, Search, History 
+} from 'lucide-react'; // Removed ChevronsLeft, ChevronsRight
 import { toast as sonnerToast, Toaster } from 'sonner';
 
 interface MonthlyStockLedgerItem {
@@ -41,12 +41,12 @@ interface MonthlyStockLedgerItem {
 }
 
 interface ProductListItem {
-    id: string; // This should map to productArticleNo
+    id: string; 
     name: string;
-    articleNumber: string; // Assuming this might be the same as id or a display variant
+    articleNumber: string; 
 }
 
-const ITEMS_PER_PAGE = 30;
+// const ITEMS_PER_PAGE = 30; // Removed
 const IST_TIMEZONE = 'Asia/Kolkata';
 
 const formatTimestampToIST = (utcTimestamp: string | Date): string => {
@@ -77,9 +77,9 @@ export default function StockLedgerPage() {
     const [displayedLedgerData, setDisplayedLedgerData] = useState<MonthlyStockLedgerItem[]>([]);
 
     const [isLoading, setIsLoading] = useState(true);
-    const [isPaginating, setIsPaginating] = useState(false);
-    const [isSyncingVisible, setIsSyncingVisible] = useState(false); // Renamed from isSyncingAll
-    const [isSyncingEntireMonth, setIsSyncingEntireMonth] = useState(false); // New state for "Sync All Products for Month"
+    // const [isPaginating, setIsPaginating] = useState(false); // Removed
+    const [isSyncingVisible, setIsSyncingVisible] = useState(false);
+    const [isSyncingEntireMonth, setIsSyncingEntireMonth] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthYYYYMM());
     const [searchTerm, setSearchTerm] = useState<string>('');
@@ -98,73 +98,44 @@ export default function StockLedgerPage() {
 
     const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
-    const [hasNextPage, setHasNextPage] = useState(false);
+    // Removed pagination state: currentPage, pageCursors, hasNextPage
 
     const monthOptions = useMemo(() => getMonthOptions(), []);
 
     const fetchProductList = useCallback(async () => {
-        // setIsLoadingProductList(true) // Optional: if you want a separate loader for this
         try {
             const response = await fetch('/api/manager/products-list');
             if (!response.ok) throw new Error('Failed to fetch product list');
-            // Ensure the ProductListItem interface matches the response.
-            // The API returns: { id: string, name: string }
-            // Your ProductListItem has: { id: string; name: string; articleNumber: string; }
-            // Let's assume 'id' from API is the articleNumber.
             const dataFromApi: { id: string, name: string }[] = await response.json();
             const formattedProductList = dataFromApi.map(p => ({
-                id: p.id, // This 'id' will be used as productArticleNo
+                id: p.id,
                 name: p.name,
-                articleNumber: p.id // Assuming id is the article number
+                articleNumber: p.id 
             }));
             setProductList(formattedProductList);
             console.log(`[Stock Page] Fetched ${formattedProductList.length} products for selection.`);
         } catch (err: any) {
             sonnerToast.error("Product list error: " + err.message);
-            setProductList([]); // Set to empty on error
-        } finally {
-            // setIsLoadingProductList(false)
+            setProductList([]);
         }
     }, []);
 
-    const fetchStockLedgerData = useCallback(async (monthToFetch: string, pageNum: number) => {
-        // ... (existing code, no changes needed here)
-        if (pageNum === 1) setIsLoading(true);
-        else setIsPaginating(true);
+    const fetchStockLedgerData = useCallback(async (monthToFetch: string) => {
+        setIsLoading(true);
         setError(null);
-
-        const cursorIndex = pageNum - 1;
-        const startAfterCursor = pageNum > 1 && pageCursors.length > cursorIndex && cursorIndex >= 0 ? pageCursors[cursorIndex] : null;
         
-        let queryParams = `month=${monthToFetch}&limit=${ITEMS_PER_PAGE}`;
-        if (startAfterCursor) {
-            queryParams += `&startAfterProductNo=${encodeURIComponent(startAfterCursor)}`;
-        }
+        const queryParams = `month=${monthToFetch}`; // No limit or startAfter
 
         try {
             const response = await fetch(`/api/manager/stock-ledger?${queryParams}`);
             if (!response.ok) { const errData = await response.json(); throw new Error(errData.message || 'Ledger fetch failed'); }
-            const data: { items: MonthlyStockLedgerItem[], newLastDocProductNo: string | null, hasMore: boolean } = await response.json();
+            
+            // API will now return just { items: MonthlyStockLedgerItem[] }
+            const data: { items: MonthlyStockLedgerItem[] } = await response.json();
             
             setAllLedgerDataForMonth(data.items || []);
             setDisplayedLedgerData(data.items || []); 
-            setHasNextPage(data.hasMore);
-
-            if (data.items.length > 0) {
-                const newCursor = data.newLastDocProductNo; 
-                setPageCursors(prevCursors => {
-                    const updatedCursors = [...prevCursors];
-                    while (updatedCursors.length <= pageNum) {
-                        updatedCursors.push(null);
-                    }
-                    updatedCursors[pageNum] = newCursor; 
-                    return updatedCursors;
-                });
-            } else if (pageNum > 1 && data.items.length === 0) {
-                setHasNextPage(false);
-            }
+            // No hasNextPage or pageCursors to update
 
         } catch (err: any) {
             setError(err.message); 
@@ -173,24 +144,20 @@ export default function StockLedgerPage() {
             sonnerToast.error("Ledger fetch error: " + err.message);
         } finally {
             setIsLoading(false);
-            setIsPaginating(false);
         }
-    }, [pageCursors]);
+    }, []);
 
 
     useEffect(() => { fetchProductList(); }, [fetchProductList]);
 
     useEffect(() => {
-        setCurrentPage(1);
-        setPageCursors([null]);
-        setHasNextPage(false);
         setExpandedRows({});
         setSearchTerm('');
         if (selectedMonth) {
-            fetchStockLedgerData(selectedMonth, 1);
+            fetchStockLedgerData(selectedMonth);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedMonth]);
+    }, [selectedMonth, fetchStockLedgerData]);
 
     useEffect(() => {
         if (!searchTerm) {
@@ -206,7 +173,6 @@ export default function StockLedgerPage() {
     }, [searchTerm, allLedgerDataForMonth]);
 
     const handleAddStock = async () => {
-        // ... (existing code, no changes needed here)
         if (!selectedProductForRestock || !restockQuantityKg || !selectedMonth || !restockDate) { sonnerToast.error("Product, quantity, month, and restock date are required."); return; }
         setIsAddingStock(true);
         try {
@@ -221,7 +187,7 @@ export default function StockLedgerPage() {
             if (!response.ok) { const d = await response.json(); throw new Error(d.message || 'Failed to add stock');}
             sonnerToast.success('Stock added successfully!'); setIsAddStockDialogOpen(false);
             setSelectedProductForRestock(''); setRestockQuantityKg(''); setRestockNotes(''); setRestockDate(new Date().toISOString().split('T')[0]);
-            fetchStockLedgerData(selectedMonth, currentPage); 
+            fetchStockLedgerData(selectedMonth); 
         } catch (e:any) { sonnerToast.error("Error adding stock: " + e.message); } finally { setIsAddingStock(false); }
     };
 
@@ -230,7 +196,6 @@ export default function StockLedgerPage() {
     };
 
     const handleUpdateOpeningStock = async () => {
-        // ... (existing code, no changes needed here)
         if (!editingStockItem || newOpeningStockKg === '') return;
         const parsedOpeningStock = parseFloat(newOpeningStockKg);
         if (isNaN(parsedOpeningStock) || parsedOpeningStock < 0) {
@@ -250,11 +215,11 @@ export default function StockLedgerPage() {
             if (!response.ok) { const d = await response.json(); throw new Error(d.message || 'Update failed');}
             sonnerToast.success('Opening stock updated!'); 
             setIsEditOpeningStockDialogOpen(false); 
-            fetchStockLedgerData(selectedMonth, currentPage); 
+            fetchStockLedgerData(selectedMonth); 
         } catch (e:any) { sonnerToast.error("Update error: " + e.message); } finally { setIsUpdatingOpeningStock(false); }
     };
 
-    const handleSyncVisibleSales = async () => { // Renamed from handleSyncAllVisibleSales
+    const handleSyncVisibleSales = async () => { 
         const itemsToSync = searchTerm ? displayedLedgerData : allLedgerDataForMonth;
         if (itemsToSync.length === 0) { sonnerToast.info("No products currently visible to sync."); return; }
         setIsSyncingVisible(true);
@@ -266,18 +231,17 @@ export default function StockLedgerPage() {
             });
             const resData = await response.json();
             if (!response.ok) throw new Error(resData.message || 'Sync failed');
-            if (response.status === 207) { // Multi-Status for partial success
+            if (response.status === 207) {
                  sonnerToast.warning(resData.message || `Sales sync for visible products partially complete. Check details.`, {
                     description: `Success: ${resData.successCount}, Failed: ${resData.errorCount}`,
                 });
             } else {
                 sonnerToast.success(resData.message || `Sales synced for ${nos.length} visible products in ${selectedMonth}`);
             }
-            fetchStockLedgerData(selectedMonth, currentPage);
+            fetchStockLedgerData(selectedMonth);
         } catch (e:any) { sonnerToast.error("Sync Visible error: " + e.message); } finally { setIsSyncingVisible(false); }
     };
 
-    // NEW: Handler to sync sales for ALL products for the selected month
     const handleSyncEntireMonthSales = async () => {
         if (productList.length === 0) {
             sonnerToast.info("Product list not loaded yet or is empty. Cannot sync all.");
@@ -288,13 +252,12 @@ export default function StockLedgerPage() {
             return;
         }
 
-        // Optional: Add a confirmation dialog here for such a broad action
         if (!confirm(`Are you sure you want to sync sales for ALL ${productList.length} products for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}? This might take some time. This is a Document Read Expensive task`)) {
             return;
         }
 
         setIsSyncingEntireMonth(true);
-        const allProductArticleNos = productList.map(p => p.id); // 'id' from productList is the article number
+        const allProductArticleNos = productList.map(p => p.id);
 
         try {
             sonnerToast.info(`Starting sales sync for all ${allProductArticleNos.length} products for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}... This may take a moment.`, { duration: 10000 });
@@ -305,11 +268,11 @@ export default function StockLedgerPage() {
             });
             const resData = await response.json();
 
-            if (!response.ok && response.status !== 207) { // 207 is Multi-Status, handled below
+            if (!response.ok && response.status !== 207) {
                 throw new Error(resData.message || 'Sync for all products failed');
             }
 
-            if (response.status === 207) { // Multi-Status for partial success
+            if (response.status === 207) { 
                  sonnerToast.warning(resData.message || `Sales sync for all products partially complete.`, {
                     description: `Success: ${resData.successCount}, Failed: ${resData.errorCount}. Check console for detailed errors.`,
                     duration: 15000
@@ -320,7 +283,7 @@ export default function StockLedgerPage() {
             } else {
                 sonnerToast.success(resData.message || `Sales successfully synced for all ${allProductArticleNos.length} products in ${selectedMonth}.`);
             }
-            fetchStockLedgerData(selectedMonth, currentPage); // Refresh data
+            fetchStockLedgerData(selectedMonth); 
         } catch (e: any) {
             sonnerToast.error("Sync All Products Error: " + e.message, { duration: 10000 });
             console.error("[STOCK SYNC ALL] Error:", e);
@@ -334,20 +297,7 @@ export default function StockLedgerPage() {
         setExpandedRows(prev => ({ ...prev, [productArticleNo]: !prev[productArticleNo] }));
     };
 
-    const handlePageNavigation = (direction: 'next' | 'prev') => {
-        // ... (existing code, no changes needed here)
-        let newPage = currentPage;
-        if (direction === 'next' && hasNextPage) {
-            newPage = currentPage + 1;
-        } else if (direction === 'prev' && currentPage > 1) {
-            newPage = currentPage - 1;
-        }
-        
-        if (newPage !== currentPage) {
-            setCurrentPage(newPage);
-            fetchStockLedgerData(selectedMonth, newPage);
-        }
-    };
+    // Removed handlePageNavigation function
 
     return (
         <>
@@ -360,9 +310,7 @@ export default function StockLedgerPage() {
                                 <CardTitle className="text-xl sm:text-2xl">Monthly Stock Ledger</CardTitle>
                                 <CardDescription className="text-xs sm:text-sm mt-1">Manage monthly stock</CardDescription>
                             </div>
-                            {/* Action Buttons Group */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-row md:flex-wrap md:items-center md:gap-3 w-full md:w-auto">
-                                {/* Search Input */}
                                 <div className="relative w-full sm:w-48 md:w-56 order-last md:order-1 col-span-full sm:col-span-1 md:col-auto mt-2 md:mt-0">
                                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                                     <Input
@@ -374,7 +322,6 @@ export default function StockLedgerPage() {
                                     />
                                 </div>
 
-                                {/* Month Select */}
                                 <div className="order-1 md:order-2 col-span-2 sm:col-span-1 md:col-auto">
                                     <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                                         <SelectTrigger className="w-full sm:w-[160px] md:w-[180px] text-xs sm:text-sm h-8 sm:h-9">
@@ -385,14 +332,13 @@ export default function StockLedgerPage() {
                                     </Select>
                                 </div>
 
-                                {/* Sync Visible Sales Button */}
                                 <div className="order-2 md:order-3 col-span-1 sm:col-auto">
                                     <Button 
                                         onClick={handleSyncVisibleSales} 
                                         size="sm" 
-                                        variant="outline" // Differentiate from Sync All
+                                        variant="outline"
                                         className="w-full sm:w-auto text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap" 
-                                        disabled={isLoading || isPaginating || isSyncingVisible || isSyncingEntireMonth || displayedLedgerData.length === 0}
+                                        disabled={isLoading || isSyncingVisible || isSyncingEntireMonth || displayedLedgerData.length === 0}
                                         title="Sync sales for currently visible/searched products"
                                     >
                                         {isSyncingVisible ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <RefreshCw className="mr-1 h-3 w-3"/>}
@@ -400,13 +346,12 @@ export default function StockLedgerPage() {
                                     </Button>
                                 </div>
 
-                                {/* NEW: Sync All Products for Month Button */}
                                 <div className="order-3 md:order-4 col-span-1 sm:col-auto">
                                     <Button 
                                         onClick={handleSyncEntireMonthSales} 
                                         size="sm" 
                                         className="w-full sm:w-auto text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap" 
-                                        disabled={isLoading || isPaginating || isSyncingVisible || isSyncingEntireMonth || productList.length === 0}
+                                        disabled={isLoading || isSyncingVisible || isSyncingEntireMonth || productList.length === 0}
                                         title={`Sync sales for all ${productList.length} products for the selected month`}
                                     >
                                         {isSyncingEntireMonth ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <History className="mr-1 h-3 w-3"/>}
@@ -414,7 +359,6 @@ export default function StockLedgerPage() {
                                     </Button>
                                 </div>
                                 
-                                {/* Add Stock Button Dialog Trigger */}
                                 <div className="order-4 md:order-5 col-span-2 sm:col-span-1 md:col-auto">
                                     <Dialog open={isAddStockDialogOpen} onOpenChange={setIsAddStockDialogOpen}>
                                         <DialogTrigger asChild>
@@ -423,9 +367,8 @@ export default function StockLedgerPage() {
                                             </Button>
                                         </DialogTrigger>
                                         <DialogContent className="sm:max-w-[520px]">
-                                          {/* ... (Add stock dialog content - no change) ... */}
                                            <DialogHeader><DialogTitle>Add Stock for {monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}</DialogTitle><DialogDescription>Record new stock arrival.</DialogDescription></DialogHeader>
-                                            <div className="grid gap-4 py-4"> {/* Main grid for form items */}
+                                            <div className="grid gap-4 py-4">
                                                 <div className="space-y-1 sm:grid sm:grid-cols-4 sm:items-center sm:gap-x-3 sm:space-y-0">
                                                     <Label htmlFor="product_restock_select" className="text-xs sm:text-sm sm:text-right sm:col-span-1">Product</Label>
                                                     <Select value={selectedProductForRestock} onValueChange={setSelectedProductForRestock}>
@@ -464,24 +407,23 @@ export default function StockLedgerPage() {
                         {error && <p className="text-red-500 text-center py-2 text-xs sm:text-sm">{error}</p>}
                     </CardHeader>
                     <CardContent className="px-0 sm:px-6">
-                        {/* ... (Loading states and table - no change, but check disabled states on buttons) ... */}
-                        {(isLoading || isPaginating) && (
+                        {isLoading && (
                             <div className="flex justify-center items-center py-10">
                                 <Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-primary" /> 
                                 <p className="ml-2 text-sm sm:text-base">
-                                    {isPaginating ? 'Loading next page...' : `Loading ledger for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}...`}
+                                    {`Loading ledger for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}...`}
                                 </p>
                             </div>
                         )}
                         
-                        {!isLoading && !isPaginating && displayedLedgerData.length === 0 && !error && (
+                        {!isLoading && displayedLedgerData.length === 0 && !error && (
                              <p className="text-center py-10 text-sm sm:text-base">
                                 {searchTerm ? 'No products match your search.' : `No stock ledger data for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}.`}
                             </p>
                         )}
 
-                        {!isLoading && !isPaginating && displayedLedgerData.length > 0 && (
-                            <div className="overflow-x-auto"> {/* This div now handles table scrolling */}
+                        {!isLoading && displayedLedgerData.length > 0 && (
+                            <div className="overflow-x-auto">
                                 <Table className="mt-4 text-xs sm:text-sm">
                                     <TableHeader>
                                         <TableRow>
@@ -552,29 +494,18 @@ export default function StockLedgerPage() {
                             </div>
                         )}
                         
-                        {/* Pagination - now correctly outside the table's scroll wrapper */}
-                        {(!isLoading && !isPaginating && (allLedgerDataForMonth.length > 0 || currentPage > 1) && !searchTerm ) && ( 
-                            <div className="flex items-center justify-end space-x-2 py-4 px-2 sm:px-0">
-                                <Button variant="outline" size="sm" onClick={()=>handlePageNavigation('prev')} disabled={currentPage === 1 || isLoading || isPaginating} className="text-xs sm:text-sm">
-                                    <ChevronsLeft className="h-3 w-3 sm:h-4 sm:w-4 mr-1"/> Prev
-                                </Button>
-                                <span className="text-xs sm:text-sm text-muted-foreground">Page {currentPage}</span>
-                                <Button variant="outline" size="sm" onClick={()=>handlePageNavigation('next')} disabled={!hasNextPage || isLoading || isPaginating} className="text-xs sm:text-sm">
-                                    Next <ChevronsRight className="h-3 w-3 sm:h-4 sm:w-4 ml-1"/>
-                                </Button>
-                            </div>
-                         )}
+                        {/* Pagination UI Removed */}
+
                     </CardContent>
                 </Card>
 
-                {/* ... (Edit opening stock dialog - no change) ... */}
                 <Dialog open={isEditOpeningStockDialogOpen} onOpenChange={setIsEditOpeningStockDialogOpen}>
                      <DialogContent className="sm:max-w-[450px]">
                         <DialogHeader>
                             <DialogTitle>Edit Opening Stock for {editingStockItem?.productName}</DialogTitle>
                             <DialogDescription>For month: {monthOptions.find(m=>m.value === editingStockItem?.month)?.label || editingStockItem?.month}. This will affect the closing stock.</DialogDescription>
                         </DialogHeader>
-                        <div className="grid gap-4 py-4"> {/* Main grid for form items */}
+                        <div className="grid gap-4 py-4">
                             <div className="space-y-1 sm:grid sm:grid-cols-3 sm:items-center sm:gap-x-4 sm:space-y-0">
                                 <Label htmlFor="openingStock" className="text-xs sm:text-sm sm:text-right sm:col-span-1">Opening (kg)</Label>
                                 <Input id="openingStock" type="number" value={newOpeningStockKg} onChange={e => setNewOpeningStockKg(e.target.value)} className="w-full sm:col-span-2 h-9 sm:h-10 text-xs sm:text-sm" placeholder="e.g., 50.25" />

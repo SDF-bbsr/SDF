@@ -7,7 +7,7 @@ import admin from 'firebase-admin';
 interface ProductListItem {
     id: string; // This is productArticleNo
     name: string;
-    articleNumber: string; // Redundant if id is always articleNo, but good for clarity
+    articleNumber: string; 
 }
 
 // Interface for ledger items (matching frontend)
@@ -22,19 +22,18 @@ interface MonthlyStockLedgerItem {
     totalSoldThisMonthKg: number;
     closingStockKg: number;
     lastSalesSyncDateForMonth: string | null;
-    lastUpdated: admin.firestore.Timestamp;
+    lastUpdated: admin.firestore.Timestamp; // Firestore Timestamp for backend
 }
 
 
 async function getOrCreateLedgerEntry(
     dbOrTransaction: FirebaseFirestore.Firestore | admin.firestore.Transaction,
     productArticleNo: string,
-    productName: string, // Product name passed in
+    productName: string, 
     currentMonthYYYYMM: string
-): Promise<FirebaseFirestore.DocumentData | null> { // Returns DocumentData or null
+): Promise<FirebaseFirestore.DocumentData | null> { 
     const ledgerDocRef = db.collection('monthlyProductStockLedger').doc(`${productArticleNo}_${currentMonthYYYYMM}`);
     
-    // Perform the read using the transaction if provided, otherwise direct DB read
     const getOperation = (ref: FirebaseFirestore.DocumentReference) => 
         dbOrTransaction instanceof admin.firestore.Transaction 
             ? (dbOrTransaction as admin.firestore.Transaction).get(ref) 
@@ -44,9 +43,6 @@ async function getOrCreateLedgerEntry(
 
     if (!ledgerDocSnap.exists) {
         const [year, monthNum] = currentMonthYYYYMM.split('-').map(Number);
-        // For previous month: monthNum is 1-indexed. new Date's month is 0-indexed.
-        // So, for month `monthNum`, its 0-indexed version is `monthNum - 1`.
-        // Previous month is `monthNum - 1 - 1 = monthNum - 2`.
         const prevMonthDate = new Date(year, monthNum - 2, 1);
         const prevMonthYYYYMM = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
         
@@ -60,7 +56,7 @@ async function getOrCreateLedgerEntry(
 
         const initialData: MonthlyStockLedgerItem = {
             productArticleNo,
-            productName, // Use the passed productName
+            productName, 
             month: currentMonthYYYYMM,
             year: currentMonthYYYYMM.split('-')[0],
             openingStockKg,
@@ -69,7 +65,7 @@ async function getOrCreateLedgerEntry(
             totalSoldThisMonthKg: 0,
             closingStockKg: openingStockKg,
             lastSalesSyncDateForMonth: null,
-            lastUpdated: admin.firestore.FieldValue.serverTimestamp() as admin.firestore.Timestamp // Cast for type correctness
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp() as admin.firestore.Timestamp
         };
 
         if (dbOrTransaction instanceof admin.firestore.Transaction) {
@@ -77,9 +73,15 @@ async function getOrCreateLedgerEntry(
         } else {
             await ledgerDocRef.set(initialData);
         }
-        return initialData; // Return the data that was set
+        // After setting, re-fetch the snapshot if we want to return consistent DocumentData with a server timestamp resolved
+        // Or just return initialData. For simplicity here, return initialData. If serverTimestamp needs to be resolved before returning,
+        // then another get would be needed if not in a transaction or if the transaction commit is not awaited here.
+        // However, the frontend interface has `lastUpdated: string`, so initialData with a placeholder or `new Date().toISOString()` might be okay,
+        // or let the first fetch after creation show the resolved server timestamp.
+        // The original code returned `initialData` in this path.
+        return initialData; 
     }
-    return ledgerDocSnap.data() || null; // Return existing data
+    return ledgerDocSnap.data() || null; 
 }
 
 
@@ -87,66 +89,41 @@ export async function GET(req: NextRequest) {
     try {
         const { searchParams } = new URL(req.url);
         const month = searchParams.get('month');
-        const limit = parseInt(searchParams.get('limit') || '30', 10);
-        const startAfterProductNo = searchParams.get('startAfterProductNo');
+        // const limit = parseInt(searchParams.get('limit') || '30', 10); // Removed
+        // const startAfterProductNo = searchParams.get('startAfterProductNo'); // Removed
 
         if (!month || !/^\d{4}-\d{2}$/.test(month)) {
             return NextResponse.json({ message: 'Valid month (YYYY-MM) is required.' }, { status: 400 });
         }
 
-        // 1. Fetch all product definitions, ordered by productArticleNo for consistent pagination
-        const productsSnapshot = await db.collection('product').orderBy(admin.firestore.FieldPath.documentId()).get(); // Order by document ID (articleNo)
+        // 1. Fetch all product definitions, ordered by productArticleNo
+        const productsSnapshot = await db.collection('product').orderBy(admin.firestore.FieldPath.documentId()).get();
 
         const allProductDefs: ProductListItem[] = productsSnapshot.docs.map(doc => ({
-            id: doc.id, // document ID is productArticleNo
-            name: doc.data().articleName || `Product ${doc.id}`, // Fallback name
-            articleNumber: doc.data().articleNumber || doc.id, // Ensure articleNumber is present
+            id: doc.id, 
+            name: doc.data().articleName || `Product ${doc.id}`, 
+            articleNumber: doc.data().articleNumber || doc.id, 
         }));
-
-        let productIndexToStartFrom = 0;
-        if (startAfterProductNo) {
-            const foundIndex = allProductDefs.findIndex(p => p.id === startAfterProductNo);
-            if (foundIndex !== -1) {
-                productIndexToStartFrom = foundIndex + 1; // Start from the item *after* the cursor
-            } else {
-                // If startAfterProductNo is not found, it might mean it was deleted or an invalid cursor.
-                // Depending on desired behavior, could return empty or error.
-                // For now, if not found, effectively means starting from the beginning of what's left or an invalid cursor
-                // If we return empty here, it might stop pagination prematurely if the cursor item was deleted.
-                // A safer bet if the cursor is not found (and it's not the first page) is to indicate an issue or re-fetch from page 1.
-                // However, for simplicity of this merge, we'll assume valid cursors or treat not found as "no more items from this point".
-                // If you always want to return items if available, even if cursor is bad, don't set index high.
-                // productIndexToStartFrom = allProductDefs.length; // Effectively no items
-            }
-        }
         
-        const productsForPage = allProductDefs.slice(productIndexToStartFrom, productIndexToStartFrom + limit);
-        
-        const itemsPromises = productsForPage.map(async (product) => {
-            // Use db directly for getOrCreate in GET, as it's not part of a larger write transaction for this specific item
+        // Fetch ledger entry for ALL products
+        const itemsPromises = allProductDefs.map(async (product) => {
             const ledgerData = await getOrCreateLedgerEntry(db, product.id, product.name, month);
-            return ledgerData; // This will be the document data or the initial data if created
+            // Ensure lastUpdated is a string for the frontend
+            if (ledgerData && ledgerData.lastUpdated && typeof ledgerData.lastUpdated.toDate === 'function') {
+                ledgerData.lastUpdated = ledgerData.lastUpdated.toDate().toISOString();
+            } else if (ledgerData && !ledgerData.lastUpdated) { // if initialData was returned from getOrCreate
+                 ledgerData.lastUpdated = new Date().toISOString(); // placeholder if serverTimestamp not resolved
+            }
+            return ledgerData;
         });
 
-        // Filter out nulls in case getOrCreateLedgerEntry could return null and we don't want to send them
-        const resolvedItems = (await Promise.all(itemsPromises)).filter(item => item !== null) as MonthlyStockLedgerItem[];
+        const resolvedItems = (await Promise.all(itemsPromises))
+            .filter(item => item !== null) as MonthlyStockLedgerItem[];
         
-        let newLastDocProductNo: string | null = null;
-        let hasMore = false;
-
-        if (resolvedItems.length > 0) {
-            newLastDocProductNo = resolvedItems[resolvedItems.length - 1].productArticleNo;
-            // Check if there are more products in the *original full list* after the current page
-            if (productIndexToStartFrom + resolvedItems.length < allProductDefs.length) {
-                hasMore = true;
-            }
-        } else if (startAfterProductNo && productsForPage.length === 0 && productIndexToStartFrom < allProductDefs.length) {
-            // This case implies startAfterProductNo was valid, but the slice yielded no items (e.g. end of list for that cursor)
-            // but there might still be other items in allProductDefs if the cursor was somewhere in the middle and limit was small.
-            // The hasMore logic above should handle this. The key is `productIndexToStartFrom + resolvedItems.length < allProductDefs.length`
-        }
+        // Ensure items are sorted by productArticleNo (should be, but explicit sort is safer)
+        resolvedItems.sort((a, b) => a.productArticleNo.localeCompare(b.productArticleNo));
         
-        return NextResponse.json({ items: resolvedItems, newLastDocProductNo, hasMore });
+        return NextResponse.json({ items: resolvedItems });
 
     } catch (error: any) {
         console.error("Error in GET /api/manager/stock-ledger:", error);
@@ -165,7 +142,7 @@ export async function POST(req: NextRequest) { // Add Stock
             return NextResponse.json({ message: 'Valid month (YYYY-MM) for monthToUpdate is required.' }, { status: 400 });
         }
         try {
-            new Date(restockDate).toISOString(); // Validate date format
+            new Date(restockDate).toISOString(); 
         } catch (e) {
             return NextResponse.json({ message: 'Valid restockDate (YYYY-MM-DD) is required.' }, { status: 400 });
         }
@@ -176,27 +153,22 @@ export async function POST(req: NextRequest) { // Add Stock
         if (!productDoc.exists) {
             return NextResponse.json({ message: `Product with ID ${productArticleNo} not found.` }, { status: 404 });
         }
-        const productName = productDoc.data()?.articleName || `Product ${productArticleNo}`; // Get productName
+        const productName = productDoc.data()?.articleName || `Product ${productArticleNo}`; 
 
         const ledgerDocRef = db.collection('monthlyProductStockLedger').doc(`${productArticleNo}_${monthToUpdate}`);
 
         await db.runTransaction(async (transaction) => {
-            // getOrCreateLedgerEntry will ensure the entry exists, using the transaction.
-            // It returns the data of the entry (either existing or newly created).
             const ledgerData = await getOrCreateLedgerEntry(transaction, productArticleNo, productName, monthToUpdate);
             
             if (!ledgerData) {
-                // This case should ideally not be reached if getOrCreateLedgerEntry works as expected
-                // (i.e., it creates if not exists, or product itself doesn't exist which is checked before)
                 throw new Error(`Ledger entry could not be found or created for ${productArticleNo} in ${monthToUpdate}.`);
             }
             
-            // ledgerData is now the current state of the document data
-            const currentData = ledgerData as MonthlyStockLedgerItem; // Cast for type safety
+            const currentData = ledgerData as MonthlyStockLedgerItem; 
             
             const newTotalRestocked = (currentData.totalRestockedThisMonthKg || 0) + quantityKg;
             const newClosingStock = (currentData.openingStockKg || 0) + newTotalRestocked - (currentData.totalSoldThisMonthKg || 0);
-            const restockTimestampKey = new Date().toISOString(); // Unique key for the restock entry
+            const restockTimestampKey = new Date().toISOString(); 
 
             transaction.update(ledgerDocRef, {
                 totalRestockedThisMonthKg: newTotalRestocked,
