@@ -1,10 +1,11 @@
 // app/api/telegram/bot/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import exceljs from 'exceljs'; // For Excel generation
 
-// Define types for Telegram message and chat for better type safety
+// --- Interfaces (Kept from both, as they are consistent) ---
 interface TelegramChat {
     id: number;
-    type: string; // "private", "group", "supergroup", or "channel"
+    type: string;
     first_name?: string;
     last_name?: string;
     username?: string;
@@ -23,29 +24,46 @@ interface TelegramMessage {
     chat: TelegramChat;
     date: number; // Unix timestamp
     text?: string;
-    // Add other message fields if needed (entities, photo, etc.)
 }
 
 interface TelegramRequestBody {
     update_id: number;
     message?: TelegramMessage;
-    // Add other update types if needed (edited_message, callback_query, etc.)
 }
 
+interface DailySummaryItem {
+    date: string;
+    totalSalesValue: number;
+    totalTransactions: number;
+}
 
+interface ApiSalesResponse {
+    dailySummaries: DailySummaryItem[];
+    // Add other potential top-level keys if your API might return them
+}
+
+// --- Environment Variables and Constants ---
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const BOT_PASSWORD = process.env.BOT_PASSWORD;
-const VERCEL_APP_URL = process.env.VERCEL_APP_URL;
+const VERCEL_APP_URL = process.env.VERCEL_APP_URL; // e.g., https://dryfruit-manager.vercel.app
 
-if (!TELEGRAM_BOT_TOKEN || !BOT_PASSWORD || !VERCEL_APP_URL) {
-    console.error("Missing one or more required environment variables: TELEGRAM_BOT_TOKEN, BOT_PASSWORD, VERCEL_APP_URL");
-    // Optional: throw an error during build/startup if you prefer to fail fast
+const authenticatedUsers = new Set<number>(); // Store chat IDs
+
+const IST_TIMEZONE_SERVER = 'Asia/Kolkata';
+
+// --- Helper Functions ---
+function escapeMarkdownV2(text: string): string {
+    if (typeof text !== 'string') return '';
+    // Escape all reserved characters for MarkdownV2
+    return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
 }
 
-// Simple in-memory store for authenticated users.
-const authenticatedUsers = new Set<number>(); // Store chat IDs (numbers)
-
 async function sendTelegramMessage(chatId: number, text: string, parseMode: "MarkdownV2" | "HTML" | undefined = "MarkdownV2") {
+    console.log(`[Bot sendTelegramMessage] Sending to chat ${chatId}: ${text.substring(0, 100)}...`);
+    if (!TELEGRAM_BOT_TOKEN) {
+        console.error("[Bot sendTelegramMessage] TELEGRAM_BOT_TOKEN is not set!");
+        return;
+    }
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     try {
         const response = await fetch(url, {
@@ -55,144 +73,333 @@ async function sendTelegramMessage(chatId: number, text: string, parseMode: "Mar
         });
         if (!response.ok) {
             const errorData = await response.json();
-            console.error("Telegram API sendMessage error:", errorData);
+            console.error("[Bot sendTelegramMessage] Telegram API sendMessage error:", errorData);
         }
     } catch (error) {
-        console.error("Error sending Telegram message:", error);
+        console.error("[Bot sendTelegramMessage] Error sending Telegram message:", error);
+    }
+}
+
+async function sendTelegramDocument(chatId: number, fileBuffer: Buffer, filename: string, caption?: string) {
+    console.log(`[Bot sendTelegramDocument] Sending document ${filename} to chat ${chatId}`);
+    if (!TELEGRAM_BOT_TOKEN) {
+        console.error("[Bot sendTelegramDocument] TELEGRAM_BOT_TOKEN is not set!");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('document', new Blob([fileBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
+    if (caption) {
+        formData.append('caption', caption);
+    }
+
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`;
+    try {
+        const response = await fetch(url, { method: 'POST', body: formData });
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error("[Bot sendTelegramDocument] Telegram API sendDocument error:", errorData, `Response status: ${response.status}`);
+        } else {
+            console.log(`[Bot sendTelegramDocument] Document ${filename} sent successfully to chat ${chatId}.`);
+        }
+    } catch (error) {
+        console.error("[Bot sendTelegramDocument] Error sending Telegram document:", error);
     }
 }
 
 function isValidDate(dateString: string): boolean {
+    // Regex to check YYYY-MM-DD format
     const regex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateString.match(regex)) return false;
+
+    // Check if the date is actually valid (e.g., 2023-02-30 is invalid)
     const date = new Date(dateString);
     const timestamp = date.getTime();
     if (typeof timestamp !== 'number' || Number.isNaN(timestamp)) return false;
+
+    // Ensure conversion back to ISO string matches the input (accounts for month/day rollovers)
     return date.toISOString().startsWith(dateString);
 }
 
-// Main handler for POST requests
+const getISODateStringInIST = (date: Date): string => {
+  // Ensure the date is interpreted in IST for formatting
+  const formatter = new Intl.DateTimeFormat('en-CA', { // 'en-CA' gives YYYY-MM-DD
+    timeZone: IST_TIMEZONE_SERVER,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(date);
+};
+
+// --- Main Handler ---
 export async function POST(req: NextRequest) {
+    console.log("[Bot Handler POST] Received a request.");
+
     if (!TELEGRAM_BOT_TOKEN || !BOT_PASSWORD || !VERCEL_APP_URL) {
-         // This check is more for runtime if somehow the env vars aren't loaded
-        await sendTelegramMessage(0, "Bot misconfiguration: Critical environment variables missing. Please contact admin."); // Send to a dummy chat ID or log
-        return NextResponse.json({ error: "Bot misconfigured" }, { status: 500 });
+        console.error("[Bot Handler POST] CRITICAL: Missing one or more required environment variables (TELEGRAM_BOT_TOKEN, BOT_PASSWORD, VERCEL_APP_URL)!");
+        return NextResponse.json({ error: "Bot misconfigured internally. Required environment variables missing." }, { status: 500 });
     }
 
     let body: TelegramRequestBody;
     try {
         body = await req.json();
+        // console.log("[Bot Handler POST] Parsed request body:", JSON.stringify(body, null, 2).substring(0, 500));
     } catch (e) {
-        console.error("Failed to parse request body:", e);
+        console.error("[Bot Handler POST] Failed to parse request body:", e);
         return NextResponse.json({ error: "Bad Request: Invalid JSON" }, { status: 400 });
     }
 
     const { message } = body;
 
     if (!message || !message.chat || !message.text) {
-        console.log("Received non-message update or message without text/chat.");
-        return NextResponse.json({ status: "ok", message: "No action taken" }); // Acknowledge Telegram
+        console.log("[Bot Handler POST] Received non-message update or message without text/chat. Ignoring.");
+        return NextResponse.json({ status: "ok", message: "No action taken for this update type" });
     }
 
     const chatId: number = message.chat.id;
     const text: string = message.text.trim();
     const [commandWithSlash, ...args] = text.split(' ');
-    const command: string = commandWithSlash.startsWith('/') ? commandWithSlash : `/${commandWithSlash}`;
+    // Ensure command always starts with a slash for internal consistency, even if user omits it
+    const command: string = commandWithSlash.startsWith('/') ? commandWithSlash.toLowerCase() : `/${commandWithSlash.toLowerCase()}`;
 
-    // --- Authentication ---
+    console.log(`[Bot Handler POST] Processing command: ${command} for chat ID: ${chatId}, Args: [${args.join(', ')}]`);
+
+    // --- Authentication and Start Flow ---
     if (command === '/start') {
+        await sendTelegramMessage(chatId, `Welcome to the Dry Fruit Manager Bot\\!\nPlease authenticate using the command: \`/password <your_password>\``);
+        return NextResponse.json({ status: "ok" });
+    }
+
+    if (command === '/password') {
         const providedPassword = args[0];
         if (providedPassword && providedPassword === BOT_PASSWORD) {
             authenticatedUsers.add(chatId);
-            await sendTelegramMessage(chatId, "Authentication successful\\! You can now use `/getsummary <YYYY-MM-DD_start> <YYYY-MM-DD_end>`\\.");
+            console.log(`[Bot POST /password] User ${chatId} authenticated successfully.`);
+            const menuText = "Authentication successful\\!\n\nWhat would you like to do\\?\n" +
+                             "1\\. Get Sales Summary: `/getsummary YYYY-MM-DD YYYY-MM-DD`\n" +
+                             "   (e\\.g\\., `/getsummary 2024-01-01 2024-01-05`)\n" +
+                             "2\\. Export Yesterday's Sales: `/exportyesterday`\n\n" +
+                             "Use `/help` to see all commands again\\.";
+            await sendTelegramMessage(chatId, menuText);
         } else {
-            authenticatedUsers.delete(chatId);
-            await sendTelegramMessage(chatId, "Authentication failed\\. Please use `/start <your_password>`\\.");
+            authenticatedUsers.delete(chatId); // Ensure user is de-authenticated on failed attempt
+            console.log(`[Bot POST /password] User ${chatId} authentication failed. Provided: '${providedPassword || ''}'`);
+            await sendTelegramMessage(chatId, "Authentication failed\\. Please use `/password <your_password>` with the correct password\\. If you forgot the password, contact the administrator\\.");
         }
         return NextResponse.json({ status: "ok" });
     }
 
+    // All commands below this point require authentication
     if (!authenticatedUsers.has(chatId)) {
-        await sendTelegramMessage(chatId, "You are not authenticated\\. Please use `/start <your_password>` first\\.");
+        console.log(`[Bot POST] User ${chatId} not authenticated. Command: ${command}`);
+        await sendTelegramMessage(chatId, "You are not authenticated\\. Please use `/start` and then `/password <your_password>` to authenticate\\.");
         return NextResponse.json({ status: "ok" });
     }
 
-    // --- Command Handling ---
+    // --- Authenticated Commands ---
     if (command === '/getsummary') {
+        console.log(`[Bot POST /getsummary] Authenticated user ${chatId} requesting summary.`);
         if (args.length !== 2) {
-            await sendTelegramMessage(chatId, "Invalid format\\. Please use: `/getsummary <YYYY-MM-DD_start> <YYYY-MM-DD_end>`");
+            await sendTelegramMessage(chatId, "Invalid format\\. Please use: `/getsummary <YYYY-MM-DD_start> <YYYY-MM-DD_end>`\nExample: `/getsummary 2023-01-01 2023-01-05`");
             return NextResponse.json({ status: "ok" });
         }
         const startDate = args[0];
         const endDate = args[1];
 
         if (!isValidDate(startDate) || !isValidDate(endDate)) {
-            await sendTelegramMessage(chatId, "Invalid date format\\. Dates must be YYYY\\-MM\\-DD\\.");
+            await sendTelegramMessage(chatId, "Invalid date format\\. Dates must be YYYY\\-MM\\-DD and valid dates\\.\nExample: `/getsummary 2023-01-01 2023-01-05`");
             return NextResponse.json({ status: "ok" });
         }
 
         try {
-            await sendTelegramMessage(chatId, `Fetching summary from ${startDate} to ${endDate}\\.\\.\\.`);
-            const apiUrl = `${VERCEL_APP_URL}/api/manager/sales-transactions?mode=dailySummaries&startDate=${startDate}&endDate=${endDate}`;
+            const escapedStartDate = escapeMarkdownV2(startDate);
+            const escapedEndDate = escapeMarkdownV2(endDate);
+            await sendTelegramMessage(chatId, `Fetching summary from ${escapedStartDate} to ${escapedEndDate}\\.\\.\\.`);
             
-            console.log(`Calling API: ${apiUrl}`); // For debugging
+            const cleanVercelAppUrl = VERCEL_APP_URL!.endsWith('/') ? VERCEL_APP_URL!.slice(0, -1) : VERCEL_APP_URL!;
+            const apiUrl = `${cleanVercelAppUrl}/api/manager/sales-transactions?mode=dailySummaries&startDate=${startDate}&endDate=${endDate}`;
+            
+            console.log(`[Bot /getsummary] Calling API: ${apiUrl}`);
             const apiResponse = await fetch(apiUrl);
+            const responseStatus = apiResponse.status;
+            const responseTextForLog = await apiResponse.text(); 
+
+            console.log(`[Bot /getsummary] API Response Status: ${responseStatus}`);
+            // console.log(`[Bot /getsummary] API Raw Response Text (first 500 chars): ${responseTextForLog.substring(0,500)}`);
 
             if (!apiResponse.ok) {
-                const errorText = await apiResponse.text();
-                console.error(`API Error (${apiResponse.status}) from ${apiUrl}: ${errorText}`);
-                await sendTelegramMessage(chatId, `Error fetching data from API: Status ${apiResponse.status}\\. Please check server logs for details on the API call to \`${VERCEL_APP_URL?.replace(/\./g, '\\.')}/\\.\\.\\.\`\\.`);
+                console.error(`[Bot /getsummary] API Error (${responseStatus}) from ${apiUrl}. Body: ${responseTextForLog.substring(0, 500)}`);
+                const shortErrorDetail = responseTextForLog.substring(0, 100); // Show a snippet of the error
+                await sendTelegramMessage(chatId, `Error fetching data from API: Status ${responseStatus}\\. Details: ${escapeMarkdownV2(shortErrorDetail)}\\.\\.\\.`);
                 return NextResponse.json({ status: "ok" });
             }
 
-            // Define an interface for your API's daily summary item
-            interface DailySummaryItem {
-                date: string;
-                totalSalesValue: number;
-                totalTransactions: number;
+            let parsedApiResponse: ApiSalesResponse;
+            try {
+                parsedApiResponse = JSON.parse(responseTextForLog);
+                // console.log("[Bot /getsummary] Parsed API Response Object:", JSON.stringify(parsedApiResponse, null, 2).substring(0, 500));
+            } catch (jsonError: any) {
+                console.error("[Bot /getsummary] Failed to parse API response as JSON:", jsonError.message);
+                console.error("[Bot /getsummary] Raw response was:", responseTextForLog.substring(0, 500));
+                await sendTelegramMessage(chatId, "Error: API returned data in an unexpected format\\. Could not parse JSON response\\.");
+                return NextResponse.json({ status: "ok" });
             }
 
-            const data: DailySummaryItem[] = await apiResponse.json();
+            const summariesArray: DailySummaryItem[] | undefined = parsedApiResponse.dailySummaries;
+            // console.log("[Bot /getsummary] Extracted summariesArray:", JSON.stringify(summariesArray, null, 2).substring(0, 500));
 
-            if (Array.isArray(data) && data.length > 0) {
-                let responseText = `*Daily Sales Summaries (${startDate} to ${endDate})*:\n\n`;
-                data.forEach(summary => {
-                    responseText += `*Date: ${summary.date.replace(/-/g, '\\-')}*\n` + // Escape hyphens in dates
-                                    `  Total Sales: ${summary.totalSalesValue?.toFixed(2) || 'N/A'}\n` +
-                                    `  Total Transactions: ${summary.totalTransactions || 'N/A'}\n\n`;
+            if (Array.isArray(summariesArray) && summariesArray.length > 0) {
+                let responseMessageText = `*Daily Sales Summaries \\(${escapedStartDate} to ${escapedEndDate}\\)*:\n\n`;
+                summariesArray.forEach(summary => {
+                    const escapedItemDate = escapeMarkdownV2(summary.date); // Date from API should be YYYY-MM-DD
+                    const salesValue = summary.totalSalesValue?.toFixed(2) || 'N/A';
+                    const transactions = summary.totalTransactions || 'N/A';
+                    responseMessageText += `*Date: ${escapedItemDate}*\n` +
+                                    `  Total Sales: ₹${escapeMarkdownV2(salesValue)}\n` + // Assuming currency symbol desired
+                                    `  Total Transactions: ${escapeMarkdownV2(String(transactions))}\n\n`;
                 });
-                await sendTelegramMessage(chatId, responseText);
+                await sendTelegramMessage(chatId, responseMessageText);
             } else {
-                await sendTelegramMessage(chatId, `No sales summary data found for the period ${startDate.replace(/-/g, '\\-')} to ${endDate.replace(/-/g, '\\-')}\\.`);
+                console.log(`[Bot /getsummary] No data found in summariesArray or it's empty/undefined. summariesArray was:`, JSON.stringify(summariesArray));
+                await sendTelegramMessage(chatId, `No sales summary data found for the period ${escapedStartDate} to ${escapedEndDate}\\.`);
             }
 
         } catch (error: any) {
-            console.error("Error processing /getsummary command:", error);
-            // Escape the error message for MarkdownV2
-            const escapedErrorMessage = error.message ? String(error.message).replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&') : "An unknown error occurred";
-            await sendTelegramMessage(chatId, `An unexpected error occurred: ${escapedErrorMessage}`);
+            console.error("[Bot /getsummary] Error processing command:", error);
+            const escapedErrorMessage = error.message ? escapeMarkdownV2(String(error.message)) : "An unknown error occurred";
+            await sendTelegramMessage(chatId, `An unexpected error occurred while fetching summary: ${escapedErrorMessage}`);
         }
         return NextResponse.json({ status: "ok" });
     }
 
-    // --- Help Command ---
-    if (command === '/help') {
-        let helpText = "Available Commands:\n" +
-                       "`/start <password>` \\- Authenticate to use the bot\\.\n" +
-                       "`/getsummary <YYYY-MM-DD_start> <YYYY-MM-DD_end>` \\- Fetch daily sales summaries for the given date range\\.";
-        if (authenticatedUsers.has(chatId)) {
-            helpText = "You are authenticated\\.\n" + helpText.substring(helpText.indexOf("Available Commands:"));
+    if (command === '/exportyesterday') {
+        console.log(`[Bot POST /exportyesterday] Authenticated user ${chatId} requesting yesterday's export.`);
+        await sendTelegramMessage(chatId, "Generating yesterday's sales export\\.\\.\\. This may take a moment\\.");
+
+        try {
+            const todayServerTime = new Date(); // Server's current time
+            const yesterdayServerTime = new Date(todayServerTime);
+            yesterdayServerTime.setDate(todayServerTime.getDate() - 1);
+            
+            // Get yesterday's date string in YYYY-MM-DD format, respecting IST
+            const yesterdayDateString = getISODateStringInIST(yesterdayServerTime); 
+
+            console.log(`[Bot /exportyesterday] Exporting for date (IST): ${yesterdayDateString}`);
+
+            const cleanVercelAppUrl = VERCEL_APP_URL!.endsWith('/') ? VERCEL_APP_URL!.slice(0, -1) : VERCEL_APP_URL!;
+            // Use the specific export endpoint for detailed transactions
+            const apiUrl = `${cleanVercelAppUrl}/api/manager/sales-transactions/export?startDate=${yesterdayDateString}&endDate=${yesterdayDateString}&status=SOLD&limit=10000`; 
+            
+            console.log(`[Bot /exportyesterday] Calling export API: ${apiUrl}`);
+            const apiResponse = await fetch(apiUrl);
+
+            if (!apiResponse.ok) {
+                const errorText = await apiResponse.text();
+                console.error(`[Bot /exportyesterday] Export API Error (${apiResponse.status}): ${errorText.substring(0, 500)}`);
+                await sendTelegramMessage(chatId, `Failed to fetch export data: Status ${apiResponse.status}\\. ${escapeMarkdownV2(errorText.substring(0,100))}`);
+                return NextResponse.json({ status: "ok" });
+            }
+
+            // Assuming the export API returns { transactions: any[], totalRecords: number }
+            const exportData: { transactions: any[], totalRecords: number } = await apiResponse.json();
+            const transactionsToExport = exportData.transactions;
+
+            if (!transactionsToExport || transactionsToExport.length === 0) {
+                await sendTelegramMessage(chatId, `No sales transactions found to export for ${escapeMarkdownV2(yesterdayDateString)}\\.`);
+                return NextResponse.json({ status: "ok" });
+            }
+
+            console.log(`[Bot /exportyesterday] Fetched ${transactionsToExport.length} transactions for export.`);
+
+            // --- Generate Excel ---
+            const workbook = new exceljs.Workbook();
+            workbook.creator = 'DryFruitManagerBot';
+            workbook.lastModifiedBy = 'DryFruitManagerBot';
+            workbook.created = new Date();
+            workbook.modified = new Date();
+            const worksheet = workbook.addWorksheet(`Sales ${yesterdayDateString}`);
+
+            // Define columns - adjust keys and headers as per your actual transaction data structure
+            const headers = [
+                { header: 'Date of Sale', key: 'dateOfSale', width: 15 }, // Ensure 'dateOfSale' is YYYY-MM-DD
+                { header: 'Timestamp', key: 'timestamp', width: 25 }, // Original timestamp, will be formatted
+                { header: 'Staff ID', key: 'staffId', width: 15 },
+                { header: 'Product Name', key: 'product_articleName', width: 35 },
+                { header: 'Weight (g)', key: 'weightGrams', width: 15, style: { numFmt: '0.00' } },
+                { header: 'Sell Price (₹)', key: 'calculatedSellPrice', width: 18, style: { numFmt: '"₹"#,##0.00' } },
+                { header: 'Barcode', key: 'barcodeScanned', width: 20 },
+                { header: 'Status', key: 'status', width: 12 },
+                // Add more fields from ALL_EXPORTABLE_FIELDS as needed
+                // { header: 'Transaction ID', key: '_id', width: 30 }, 
+                // { header: 'Product Category', key: 'product_category', width: 20 },
+            ];
+            worksheet.columns = headers;
+            worksheet.getRow(1).font = { bold: true }; // Bold header row
+
+            // Add rows
+            transactionsToExport.forEach(tx => {
+                const rowData: any = {};
+                headers.forEach(header => {
+                    let value = tx[header.key];
+                    if (header.key === 'timestamp' && value) {
+                        // Format timestamp to a readable local string in IST
+                        try {
+                            value = new Date(value).toLocaleString('en-IN', { timeZone: IST_TIMEZONE_SERVER });
+                        } catch (e) {
+                            console.warn(`[Bot /exportyesterday] Could not format timestamp ${value}: ${e}`);
+                            // keep original value if formatting fails
+                        }
+                    }
+                    // Ensure 'dateOfSale' is just the date part if it's a full ISO string
+                    if (header.key === 'dateOfSale' && typeof value === 'string' && value.includes('T')) {
+                        value = value.split('T')[0];
+                    }
+                    rowData[header.key] = value !== undefined && value !== null ? value : '';
+                });
+                worksheet.addRow(rowData);
+            });
+            
+            const buffer = await workbook.xlsx.writeBuffer() as Buffer;
+            const filename = `SalesExport_${yesterdayDateString.replace(/-/g, '')}.xlsx`; // YYYYMMDD format in filename
+
+            await sendTelegramDocument(chatId, buffer, filename, `Sales Export for ${escapeMarkdownV2(yesterdayDateString)} containing ${transactionsToExport.length} transactions\\.`);
+
+        } catch (error: any) {
+            console.error("[Bot /exportyesterday] Error processing command:", error);
+            await sendTelegramMessage(chatId, `An error occurred while generating the export: ${escapeMarkdownV2(error.message)}`);
         }
+        return NextResponse.json({ status: "ok" });
+    }
+
+    if (command === '/help') {
+        console.log(`[Bot POST /help] Authenticated user ${chatId} requested help.`);
+        // Since this command is only reachable if authenticated, we can simplify the message
+        const helpText = "You are authenticated\\.\n\n" +
+                       "*Available Commands:*\n" +
+                       "`/getsummary <YYYY-MM-DD_start> <YYYY-MM-DD_end>`\n" +
+                       "  \\- Get daily sales summaries for the specified date range\\.\n" +
+                       "  _Example:_ `/getsummary 2024-01-01 2024-01-05`\n\n" +
+                       "`/exportyesterday`\n" +
+                       "  \\- Export yesterday's sales transactions as an Excel file\\.\n\n" +
+                       "`/help`\n" +
+                       "  \\- Show this help message\\.\n\n" +
+                       "To re\\-authenticate or if issues persist, you might need to use `/start` again followed by `/password <your_password>`\\.";
         await sendTelegramMessage(chatId, helpText);
         return NextResponse.json({ status: "ok" });
     }
 
     // Fallback for unknown commands if authenticated
-    await sendTelegramMessage(chatId, "Unknown command\\. Use /help to see available commands\\.");
+    console.log(`[Bot Handler POST] Unknown command '${command}' for authenticated user ${chatId}.`);
+    await sendTelegramMessage(chatId, `Unknown command: \`${escapeMarkdownV2(command)}\`\\. Use /help to see available commands\\.`);
     return NextResponse.json({ status: "ok" });
 }
 
-// Optional: If you want to handle GET requests to this endpoint (e.g., for health checks by Vercel)
+// --- GET Handler (e.g., for webhook verification or status check) ---
 export async function GET(req: NextRequest) {
-    return NextResponse.json({ status: "ok", message: "Telegram bot webhook is active. Send POST requests." });
+    console.log("[Bot Handler GET] Received a GET request.");
+    // You might want to add a secret query parameter here for basic verification if this endpoint is public
+    // For example, check req.nextUrl.searchParams.get('secret') === SOME_SECRET
+    return NextResponse.json({ status: "ok", message: "Telegram bot webhook is active. Send POST requests for bot commands." });
 }
