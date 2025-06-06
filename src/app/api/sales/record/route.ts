@@ -40,6 +40,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Missing required sale data (articleNo, weight, price, staffId, product details).' }, { status: 400 });
     }
 
+    // Check if weight exceeds the limit (1500 grams = 1.5 kg)
+    if (weightGrams > 1500) {
+        return NextResponse.json({ message: 'Billing is not allowed for weights exceeding 1.5 kg (1500 grams).' }, { status: 400 });
+    }
+
     const todayStrIST = getCurrentISODateStringInIST();
     const currentHourIST = getCurrentHourInIST(); // Get current hour in IST for hourly breakdown
     const currentHourStr = currentHourIST.toString().padStart(2, '0'); // Format as "00", "01", ... "23"
