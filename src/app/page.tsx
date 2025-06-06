@@ -5,11 +5,13 @@ import Link from "next/link";
 import { User, LogIn } from "lucide-react";
 
 export default function LandingPage() {
+  const Store_Name=process.env.STORE_NAME;
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-4 md:p-12 bg-primary-foreground">
       <div className="text-center mb-8 text-primary">
         {/* <h1 className="text-4xl md:text-5xl font-bold mb-4">Dry Fruit Manager</h1> */}
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">SDF Esplanade</h1>
+        <h1 className="text-4xl md:text-5xl font-bold mb-4">{Store_Name}</h1>
         <p className="text-lg">Efficiently manage your dry fruit inventory, orders, and vendors.</p>
       </div>
       <Card className="w-full max-w-sm shadow-lg bg-card text-card-foreground">

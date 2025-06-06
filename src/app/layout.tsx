@@ -7,10 +7,13 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { UserProvider } from "@/context/UserContext"; // Import UserProvider
 import { GoogleAnalytics } from '@next/third-parties/google'
 
+const Store_Name = process.env.STORE_NAME;
+const GAID=process.env.GAID;
+
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Dryfruit Goods Manager",
+  title: Store_Name,
   description: "Manage dryfruit sales and inventory",
 };
 
@@ -31,7 +34,7 @@ export default function RootLayout({
           {children}
         </UserProvider>
         <SonnerToaster />
-        <GoogleAnalytics gaId="G-983NZ6GQHB" />
+        {GAID && <GoogleAnalytics gaId={GAID} />}
       </body>
     </html>
   );
