@@ -43,7 +43,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
 
   // Function to determine the page title based on the current path
   const getPageTitle = (path: string): string => {
-    if (path.endsWith('/dashboard')) return 'Dashboard';
+    if (path.endsWith('/dashboard')) return 'Dashboard [SDF Esplanade]';
     if (path.endsWith('/sales-log')) return 'Sales Log';
     if (path.endsWith('/returns-log')) return 'Returns Log';
     if (path.endsWith('/staff-performance')) return 'Staff Performance';
@@ -69,7 +69,7 @@ export default function ManagerLayout({ children }: ManagerLayoutProps) {
       } sm:translate-x-0 sm:flex`}>
         <nav className="flex flex-col gap-2 px-2 py-4 items-start overflow-y-auto">
           <Link href="/manager/protected/dashboard" className="flex items-center gap-2 px-3 py-2 text-lg font-semibold text-primary mb-4">
-            <Package className="h-6 w-6" /> Dryfruit CRM
+            <Package className="h-6 w-6" /> SDF Esplanade
           </Link>
           <Link
             href="/manager/protected/dashboard"
