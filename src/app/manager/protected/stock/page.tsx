@@ -67,7 +67,6 @@ const getCurrentMonthYYYYMM = () => {
 const getMonthOptions = () => {
     const options = []; const today = new Date();
     for (let i = 0; i < 12; i++) { const d = new Date(today.getFullYear(), today.getMonth() - i, 1); options.push({ value: `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`, label: d.toLocaleString('default', { month: 'long', year: 'numeric' }) });}
-    for (let i = 1; i <= 3; i++) { const d = new Date(today.getFullYear(), today.getMonth() + i, 1); options.push({ value: `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`, label: d.toLocaleString('default', { month: 'long', year: 'numeric' }) });}
     options.sort((a, b) => b.value.localeCompare(a.value)); return options;
 };
 

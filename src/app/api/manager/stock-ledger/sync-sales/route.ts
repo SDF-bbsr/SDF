@@ -3,174 +3,128 @@ import { db } from '@/lib/firebaseAdmin';
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 
-// Helper to get opening stock for a given product and month
-// This function is derived from the "Modification" snippet.
-async function getOpeningStockForMonth(
-    dbInstance: FirebaseFirestore.Firestore,
-    productArticleNo: string,
-    // productName: string, // Not strictly needed by this function's logic but can be kept for consistency
-    currentMonthYYYYMM: string
-): Promise<{ openingStockKg: number }> {
-    const [year, month] = currentMonthYYYYMM.split('-').map(Number);
-    // To get previous month, month - 1 is current month's index (0-11), so month - 2 is previous month's index.
-    const prevMonthDate = new Date(year, month - 2, 1);
-    const prevMonthYYYYMM = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-
-    let openingStockKg = 0;
-    const prevLedgerDocRef = dbInstance.collection('monthlyProductStockLedger').doc(`${productArticleNo}_${prevMonthYYYYMM}`);
-    const prevLedgerDocSnap = await prevLedgerDocRef.get();
-
-    if (prevLedgerDocSnap.exists) {
-        openingStockKg = prevLedgerDocSnap.data()?.closingStockKg || 0;
-    }
-    // If previous month's ledger doesn't exist, opening stock remains 0.
-    // A more advanced system might look for the last known closing stock or a base opening stock.
-    return { openingStockKg };
-}
-
 interface SyncSalesRequestBody {
-    productArticleNos?: string[]; // Optional: can be undefined, null, or an empty array
+    productArticleNos?: string[];
     monthToSync: string;
 }
 
-interface ProductListItemAPI { // Expected structure from /api/manager/products-list
+interface ProductListItemAPI {
     id: string;
     name: string;
-    // Add other fields if present, but id and name are crucial
 }
 
 export async function POST(req: NextRequest) {
-    // Modification: Added request received log
     console.log('[STOCK SYNC SALES] POST /api/manager/stock-ledger/sync-sales: Request received.');
     try {
         const body: SyncSalesRequestBody = await req.json();
         const { productArticleNos, monthToSync } = body;
-        
-        // Modification: Added request body log
-        console.log(`[STOCK SYNC SALES] Request body: productArticleNos: ${JSON.stringify(productArticleNos)}, monthToSync: ${monthToSync}`);
 
         if (!monthToSync || !/^\d{4}-\d{2}$/.test(monthToSync)) {
             return NextResponse.json({ message: 'A valid month (YYYY-MM) is required.' }, { status: 400 });
         }
         
+        // Step 1: Determine the list of products to sync
         let effectiveProductArticleNos: string[];
-
         if (productArticleNos && Array.isArray(productArticleNos) && productArticleNos.length > 0) {
             effectiveProductArticleNos = productArticleNos;
-            console.log(`[STOCK SYNC SALES] Using provided productArticleNos: ${effectiveProductArticleNos.length} items.`);
+            console.log(`[STOCK SYNC SALES] Using ${effectiveProductArticleNos.length} provided products.`);
         } else {
-            console.log('[STOCK SYNC SALES] productArticleNos not provided or is empty. Attempting to fetch all products.');
-            const appUrl = process.env.VERCEL_APP_URL; // As specified: preccs.enc.VERCEL_APP_URL
+            console.log('[STOCK SYNC SALES] Fetching all products to sync.');
+            const appUrl = process.env.VERCEL_APP_URL;
+            if (!appUrl) throw new Error('Configuration error: VERCEL_APP_URL missing.');
             
-            if (!appUrl) {
-                console.error('[STOCK SYNC SALES] VERCEL_APP_URL environment variable is not set. Cannot fetch product list automatically.');
-                return NextResponse.json({ message: 'Configuration error: Server is not configured to fetch product list automatically (VERCEL_APP_URL missing).' }, { status: 500 });
+            const response = await fetch(`${appUrl}/api/manager/products-list`);
+            if (!response.ok) throw new Error(`Failed to fetch product list. Status: ${response.status}`);
+            
+            const products: ProductListItemAPI[] = await response.json();
+            if (!products || products.length === 0) {
+                 return NextResponse.json({ message: 'No products found to sync.' }, { status: 404 });
             }
-
-            const productListUrl = `${appUrl}/api/manager/products-list`;
-            console.log(`[STOCK SYNC SALES] Fetching product list from: ${productListUrl}`);
-
-            try {
-                const response = await fetch(productListUrl);
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error(`[STOCK SYNC SALES] Failed to fetch product list. Status: ${response.status}, URL: ${productListUrl}, Response: ${errorText}`);
-                    throw new Error(`Failed to fetch product list. Server responded with status ${response.status}`);
-                }
-                const products: ProductListItemAPI[] = await response.json();
-                
-                if (!products || products.length === 0) {
-                    console.log('[STOCK SYNC SALES] Fetched product list is empty or invalid.');
-                    return NextResponse.json({ message: 'No products found to sync. The fetched product list is empty.' }, { status: 404 });
-                }
-                
-                effectiveProductArticleNos = products.map(p => p.id);
-                if (effectiveProductArticleNos.some(id => !id || typeof id !== 'string')) {
-                    console.error('[STOCK SYNC SALES] Fetched product list contains invalid items (missing or non-string IDs).');
-                    return NextResponse.json({ message: 'Fetched product list contains invalid data.' }, { status: 500 });
-                }
-                console.log(`[STOCK SYNC SALES] Successfully fetched ${effectiveProductArticleNos.length} products to sync.`);
-
-            } catch (fetchError: any) {
-                console.error('[STOCK SYNC SALES] Error during product list fetch:', fetchError);
-                return NextResponse.json({ message: `Failed to fetch product list automatically: ${fetchError.message}` }, { status: 500 });
-            }
+            effectiveProductArticleNos = products.map(p => p.id);
+            console.log(`[STOCK SYNC SALES] Fetched ${effectiveProductArticleNos.length} products to sync.`);
         }
 
-        // From this point, effectiveProductArticleNos is guaranteed to be populated,
-        // either from the request or by fetching.
-        if (!effectiveProductArticleNos || effectiveProductArticleNos.length === 0) {
-             // This case should ideally be caught earlier (e.g., fetched list is empty)
-             // but serves as a final check.
+        if (effectiveProductArticleNos.length === 0) {
             return NextResponse.json({ message: 'No product article numbers to process.' }, { status: 400 });
         }
-
-
+        
+        // Step 2: Fetch all necessary data in parallel (Optimized)
+        console.log('[STOCK SYNC SALES] Starting parallel data fetch for all products.');
         const [year, monthNum] = monthToSync.split('-').map(Number);
         const firstDayOfMonth = `${monthToSync}-01`;
         const lastDayDate = new Date(year, monthNum, 0); 
         const lastDayOfMonth = `${monthToSync}-${String(lastDayDate.getDate()).padStart(2, '0')}`;
 
+        // We only need two sets of data now: monthly sales and the current month's ledgers.
+        const [salesSnapshot, currentLedgerDocs] = await Promise.all([
+            // 1. Get ALL sales for the month in ONE query
+            db.collection('dailyProductSales')
+                .where('date', '>=', firstDayOfMonth)
+                .where('date', '<=', lastDayOfMonth)
+                .get(),
+            
+            // 2. Get ALL existing ledgers for the CURRENT month in ONE call
+            db.getAll(...effectiveProductArticleNos.map(id => db.collection('monthlyProductStockLedger').doc(`${id}_${monthToSync}`)))
+        ]);
+        console.log(`[STOCK SYNC SALES] Fetched ${salesSnapshot.size} sales records and ${currentLedgerDocs.length} current ledgers.`);
+
+        // Step 3: Process data into Maps for fast in-memory lookup
+        const salesByProduct = new Map<string, number>();
+        salesSnapshot.forEach(doc => {
+            const data = doc.data();
+            const currentSales = salesByProduct.get(data.productArticleNo) || 0;
+            salesByProduct.set(data.productArticleNo, currentSales + (data.totalQuantitySoldGrams || 0));
+        });
+
+        const currentLedgers = new Map(currentLedgerDocs.map(doc => [doc.id.split('_')[0], doc.data()]));
+
+        // Step 4: Loop through products without awaits, preparing a batch update
+        const batch = db.batch();
         let successCount = 0;
         const errors: { articleNo: string; message: string }[] = [];
 
-        const batch = db.batch();
-
-        for (const productArticleNo of effectiveProductArticleNos) { // Use effectiveProductArticleNos
+        for (const productArticleNo of effectiveProductArticleNos) {
             try {
-                // ... (rest of the per-product sync logic remains unchanged) ...
-                const salesSnapshot = await db.collection('dailyProductSales')
-                    .where('productArticleNo', '==', productArticleNo)
-                    .where('date', '>=', firstDayOfMonth)
-                    .where('date', '<=', lastDayOfMonth)
-                    .get();
+                const existingLedgerData = currentLedgers.get(productArticleNo);
 
-                let totalSoldGramsThisMonth = 0;
-                salesSnapshot.forEach(doc => {
-                    totalSoldGramsThisMonth += doc.data().totalQuantitySoldGrams || 0;
-                });
-                const totalSoldKgThisMonth = totalSoldGramsThisMonth / 1000;
-
-                const productRef = db.collection('product').doc(productArticleNo);
-                const productDoc = await productRef.get();
-                const productName = productDoc.exists ? productDoc.data()?.articleName || productArticleNo : productArticleNo;
-
-                const ledgerDocRef = db.collection('monthlyProductStockLedger').doc(`${productArticleNo}_${monthToSync}`);
-                const ledgerSnap = await ledgerDocRef.get();
-
-                if (!ledgerSnap.exists) {
-                    const openingStockData = await getOpeningStockForMonth(db, productArticleNo, monthToSync);
-                    const initialData = {
-                        productArticleNo,
-                        productName,
-                        month: monthToSync,
-                        year: monthToSync.split('-')[0],
-                        openingStockKg: openingStockData.openingStockKg,
-                        totalRestockedThisMonthKg: 0,
-                        restockEntriesThisMonth: {},
-                        totalSoldThisMonthKg: totalSoldKgThisMonth,
-                        closingStockKg: openingStockData.openingStockKg - totalSoldKgThisMonth,
-                        lastSalesSyncDateForMonth: new Date().toISOString().split('T')[0],
-                        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-                    };
-                    batch.set(ledgerDocRef, initialData);
-                } else {
-                     const currentData = ledgerSnap.data()!;
-                     const newClosingStock = (currentData.openingStockKg || 0) + (currentData.totalRestockedThisMonthKg || 0) - totalSoldKgThisMonth;
-                     batch.update(ledgerDocRef, {
-                        totalSoldThisMonthKg: totalSoldKgThisMonth,
-                        closingStockKg: newClosingStock,
-                        lastSalesSyncDateForMonth: new Date().toISOString().split('T')[0],
-                        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                // --- CRITICAL CHANGE ---
+                // If the ledger doesn't exist, we skip it and report an error.
+                // We do NOT create it here.
+                if (!existingLedgerData) {
+                    errors.push({ 
+                        articleNo: productArticleNo, 
+                        message: 'Ledger entry for this month does not exist. Please visit the Stock Ledger page first to initialize it.' 
                     });
+                    continue; // Skip to the next product
                 }
+
+                // Calculate total sales for this product
+                const totalSoldGramsThisMonth = salesByProduct.get(productArticleNo) || 0;
+                const totalSoldKgThisMonth = totalSoldGramsThisMonth / 1000;
+                
+                // Calculate the new closing stock based on the existing ledger data
+                const openingStockKg = existingLedgerData.openingStockKg || 0;
+                const totalRestockedKg = existingLedgerData.totalRestockedThisMonthKg || 0;
+                const newClosingStock = openingStockKg + totalRestockedKg - totalSoldKgThisMonth;
+                
+                // Prepare the update operation
+                const ledgerDocRef = db.collection('monthlyProductStockLedger').doc(`${productArticleNo}_${monthToSync}`);
+                batch.update(ledgerDocRef, {
+                    totalSoldThisMonthKg: totalSoldKgThisMonth,
+                    closingStockKg: newClosingStock,
+                    lastSalesSyncDateForMonth: new Date().toISOString().split('T')[0],
+                    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+                });
+                
                 successCount++;
             } catch (e: any) {
-                console.error(`[STOCK SYNC SALES] Error syncing product ${productArticleNo}:`, e);
-                errors.push({ articleNo: productArticleNo, message: e.message || 'Unknown error during sync for this product.' });
+                console.error(`[STOCK SYNC SALES] Error processing product ${productArticleNo}:`, e);
+                errors.push({ articleNo: productArticleNo, message: e.message || 'Unknown error during processing.' });
             }
         }
-
+        
+        // Step 5: Commit all updates in a single batch
+        console.log('[STOCK SYNC SALES] Committing batch write.');
         await batch.commit();
 
         if (errors.length > 0) {
@@ -186,7 +140,6 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error("[FATAL ERROR] Error syncing sales to ledger:", error);
-        // Check if error is from req.json() parsing
         if (error instanceof SyntaxError && error.message.includes('JSON')) {
              return NextResponse.json({ message: 'Invalid JSON in request body.' }, { status: 400 });
         }
