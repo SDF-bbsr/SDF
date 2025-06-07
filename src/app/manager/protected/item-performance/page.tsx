@@ -512,17 +512,17 @@ export default function ItemPerformancePage() {
               {paginatedItems.length > 0 && grandTotals ? (
                 <>
                   <ScrollArea className="w-full whitespace-nowrap rounded-md border">
-                    <Table className="text-xs min-w-[900px]">
+                    <Table className="text-xs ">
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="py-2 px-2 min-w-[200px]">Article Name</TableHead>
-                          <TableHead className="py-2 px-2 min-w-[100px]">Article No</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[100px]">Total Value (₹)</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[100px]">Avg. Price/Pkt (₹)</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[100px]">Total Weight (kg)</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[80px]">Packets</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[100px]">% of Total Value</TableHead>
-                          <TableHead className="text-right py-2 px-2 min-w-[100px]">% of Total Weight</TableHead>
+                          <TableHead className="py-2 px-2 ">Article Name</TableHead>
+                          <TableHead className="py-2 px-2 ">Article No</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">Total Value (₹)</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">Avg. Price/Pkt (₹)</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">Total Weight (kg)</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">Packets</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">% of Total Value</TableHead>
+                          <TableHead className="text-right py-2 px-2 ">% of Total Weight</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>

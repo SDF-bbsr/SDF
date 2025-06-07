@@ -14,16 +14,16 @@ import { toast as sonnerToast, Toaster } from 'sonner';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 const FIXED_PRODUCT_FIELDS_CONFIG = [
-  { name: 'articleNumber', label: 'Article Number (ID)', type: 'text', required: true, placeholder: "e.g., 600038818", className: "min-w-[140px] text-xs" },
-  { name: 'articleName', label: 'Article Name', type: 'text', required: true, placeholder: "e.g., SD KISMISS GREEN INDIAN LOOSE", className: "min-w-[220px] text-xs" },
-  { name: 'posDescription', label: 'POS Description', type: 'text', required: false, placeholder: "e.g., KISMISS GREEN INDIAN", className: "min-w-[180px] text-xs" },
-  { name: 'metlerCode', label: 'Metler Code', type: 'text', required: false, placeholder: "e.g., 86239", className: "min-w-[110px] text-xs" },
-  { name: 'hsnCode', label: 'HSN Code', type: 'text', required: false, placeholder: "e.g., 8062010", className: "min-w-[110px] text-xs" },
-  { name: 'taxPercentage', label: 'Tax %', type: 'number', required: false, placeholder: "e.g., 5", step: "0.01", className: "min-w-[90px] text-right text-xs" },
-  { name: 'purchasePricePerKg', label: 'Purchase Price/Kg (₹)', type: 'number', required: false, placeholder: "e.g., 236", step: "0.01", className: "min-w-[150px] text-right text-xs" },
-  { name: 'sellingRatePerKg', label: 'Selling Rate/Kg (₹)', type: 'number', required: false, placeholder: "e.g., 449", step: "0.01", className: "min-w-[150px] text-right text-xs" },
-  { name: 'mrpPer100g', label: 'MRP/100g (₹)', type: 'number', required: false, placeholder: "e.g., 44.9", step: "0.01", className: "min-w-[130px] text-right text-xs" },
-  { name: 'remark', label: 'Remark', type: 'textarea', required: false, placeholder: "e.g., SET 1", className: "min-w-[180px] text-xs" },
+  { name: 'articleNumber', label: 'Article Number (ID)', type: 'text', required: true, placeholder: "e.g., 600038818", className: " text-xs" },
+  { name: 'articleName', label: 'Article Name', type: 'text', required: true, placeholder: "e.g., SD KISMISS GREEN INDIAN LOOSE", className: " text-xs" },
+  { name: 'posDescription', label: 'POS Description', type: 'text', required: false, placeholder: "e.g., KISMISS GREEN INDIAN", className: " text-xs" },
+  { name: 'metlerCode', label: 'Metler Code', type: 'text', required: false, placeholder: "e.g., 86239", className: " text-xs" },
+  { name: 'hsnCode', label: 'HSN Code', type: 'text', required: false, placeholder: "e.g., 8062010", className: " text-xs" },
+  { name: 'taxPercentage', label: 'Tax %', type: 'number', required: false, placeholder: "e.g., 5", step: "0.01", className: " text-right text-xs" },
+  { name: 'purchasePricePerKg', label: 'Purchase Price/Kg (₹)', type: 'number', required: false, placeholder: "e.g., 236", step: "0.01", className: " text-right text-xs" },
+  { name: 'sellingRatePerKg', label: 'Selling Rate/Kg (₹)', type: 'number', required: false, placeholder: "e.g., 449", step: "0.01", className: " text-right text-xs" },
+  { name: 'mrpPer100g', label: 'MRP/100g (₹)', type: 'number', required: false, placeholder: "e.g., 44.9", step: "0.01", className: " text-right text-xs" },
+  { name: 'remark', label: 'Remark', type: 'textarea', required: false, placeholder: "e.g., SET 1", className: " text-xs" },
 ];
 
 interface Product {
@@ -456,40 +456,17 @@ export default function ProductManagementPage() {
                       <Table className="text-xs">
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="text-center py-2 px-2 sm:px-3 text-xs">Actions</TableHead>
                             {FIXED_PRODUCT_FIELDS_CONFIG.map(field => (
                               <TableHead key={field.name} className={`${field.className || ''} py-2 px-2 sm:px-3`}>
                                 {field.label}
                               </TableHead>
                             ))}
-                            <TableHead className="text-center min-w-[100px] py-2 px-2 sm:px-3 text-xs">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredProducts.map((product) => (
                             <TableRow key={product.id} className={`${product._isDeleting ? "opacity-50" : ""} hover:bg-muted/50`}>
-                              {FIXED_PRODUCT_FIELDS_CONFIG.map(fieldConf => {
-                                const value = product[fieldConf.name as keyof Product];
-                                let displayValue: React.ReactNode = '-';
-                                
-                                if (value !== undefined && value !== null && String(value).trim() !== '') {
-                                  if (fieldConf.type === 'number' && typeof value === 'number') {
-                                      if (fieldConf.name.toLowerCase().includes('price') || fieldConf.name.toLowerCase().includes('rate') || fieldConf.name.toLowerCase().includes('mrp')) {
-                                        displayValue = `₹${value.toFixed(2)}`;
-                                      } else if (fieldConf.name.toLowerCase().includes('percentage')) {
-                                        displayValue = `${value.toFixed(fieldConf.step === "0.01" ? 2 : 0)}%`;
-                                      } else {
-                                        displayValue = value.toString();
-                                      }
-                                  } else {
-                                     displayValue = String(value);
-                                  }
-                                }
-                                return (
-                                  <TableCell key={fieldConf.name} className={`${fieldConf.className || ''} py-1.5 px-2 sm:py-2 sm:px-3`}>
-                                    {displayValue}
-                                  </TableCell>
-                                );
-                              })}
                               <TableCell className="text-center space-x-1 py-1 px-2 sm:py-1.5 sm:px-3">
                                 <Button variant="outline" size="icon" onClick={() => openEditModal(product)} title="Edit Product" disabled={product._isDeleting || isSubmitting} className="h-7 w-7">
                                   <Edit2 className="h-3.5 w-3.5" />
@@ -501,10 +478,33 @@ export default function ProductManagementPage() {
                                   title="Delete Product" 
                                   disabled={product._isDeleting || (isSubmitting && editingProduct?.id === product.id)}
                                   className="h-7 w-7"
-                                >
+                                  >
                                   {product._isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Trash2 className="h-3.5 w-3.5" />}
                                 </Button>
                               </TableCell>
+                                  {FIXED_PRODUCT_FIELDS_CONFIG.map(fieldConf => {
+                                    const value = product[fieldConf.name as keyof Product];
+                                    let displayValue: React.ReactNode = '-';
+                                    
+                                    if (value !== undefined && value !== null && String(value).trim() !== '') {
+                                      if (fieldConf.type === 'number' && typeof value === 'number') {
+                                          if (fieldConf.name.toLowerCase().includes('price') || fieldConf.name.toLowerCase().includes('rate') || fieldConf.name.toLowerCase().includes('mrp')) {
+                                            displayValue = `₹${value.toFixed(2)}`;
+                                          } else if (fieldConf.name.toLowerCase().includes('percentage')) {
+                                            displayValue = `${value.toFixed(fieldConf.step === "0.01" ? 2 : 0)}%`;
+                                          } else {
+                                            displayValue = value.toString();
+                                          }
+                                      } else {
+                                         displayValue = String(value);
+                                      }
+                                    }
+                                    return (
+                                      <TableCell key={fieldConf.name} className={`${fieldConf.className || ''} py-1.5 px-2 sm:py-2 sm:px-3`}>
+                                        {displayValue}
+                                      </TableCell>
+                                    );
+                                  })}
                             </TableRow>
                           ))}
                         </TableBody>

@@ -314,13 +314,13 @@ export default function ManagerDashboardPage() {
           <CardContent className="pt-0"> {/* pt-0 if ScrollArea handles padding */}
             {dashboardData.topSellingItems && dashboardData.topSellingItems.length > 0 ? (
                 <ScrollArea className="w-full whitespace-nowrap">
-                    <Table className="min-w-[650px] text-sm"> {/* Added text-sm and slightly increased min-width */}
+                    <Table className=" text-sm"> {/* Added text-sm and slightly increased min-width */}
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="px-4 py-2 min-w-[250px]">Article Name</TableHead>
-                                <TableHead className="px-4 py-2 min-w-[120px]">Article No</TableHead>
-                                <TableHead className="text-right px-4 py-2 min-w-[130px]">Total Value (₹)</TableHead>
-                                <TableHead className="text-right px-4 py-2 min-w-[100px]">Total Qty (g)</TableHead>
+                                <TableHead className="px-4 py-2 ">Article Name</TableHead>
+                                <TableHead className="px-4 py-2 ">Article No</TableHead>
+                                <TableHead className="text-right px-4 py-2 ">Total Value (₹)</TableHead>
+                                <TableHead className="text-right px-4 py-2 ">Total Qty (g)</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>

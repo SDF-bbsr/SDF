@@ -213,12 +213,12 @@ export default function TargetIncentivePage() {
                         {isLoading && <div className="flex justify-center items-center py-10"><Loader2 className="h-6 w-6 sm:h-8 sm:w-8 animate-spin text-primary" /> <p className="ml-2 text-sm sm:text-base">Loading...</p></div>}
                         
                         {!isLoading && apiData && (
-                            <Table className="mt-4 min-w-[700px] sm:min-w-[900px] text-xs sm:text-sm"> {/* Base smaller text, adjust min-width */}
+                            <Table className="mt-4  text-xs sm:text-sm"> {/* Base smaller text, adjust min-width */}
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead className="w-[150px] sm:w-[200px] sticky left-0 bg-background z-10 px-2 sm:px-4">Metric/Staff</TableHead> {/* Shorter label and padding */}
                                         {apiData.weeklyData.map(week => (
-                                            <TableHead key={week.weekKey} className="text-center min-w-[90px] sm:min-w-[110px] px-1 sm:px-2">{week.weekLabel.replace("Week ", "W")}</TableHead> 
+                                            <TableHead key={week.weekKey} className="text-center  px-1 sm:px-2">{week.weekLabel.replace("Week ", "W")}</TableHead> 
                                         ))}
                                     </TableRow>
                                 </TableHeader>

@@ -208,11 +208,11 @@ export default function StaffManagementPage() {
                   <Table className="text-xs">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[150px] py-2 px-3">Name</TableHead>
-                        <TableHead className="min-w-[120px] py-2 px-3">Staff ID</TableHead>
-                        <TableHead className="min-w-[180px] py-2 px-3">Password</TableHead>
-                        <TableHead className="min-w-[100px] py-2 px-3">Role</TableHead>
-                        <TableHead className="text-center min-w-[110px] py-2 px-3">Actions</TableHead>
+                        <TableHead className=" py-2 px-3">Name</TableHead>
+                        <TableHead className=" py-2 px-3">Staff ID</TableHead>
+                        <TableHead className=" py-2 px-3">Password</TableHead>
+                        <TableHead className=" py-2 px-3">Role</TableHead>
+                        <TableHead className="text-center  py-2 px-3">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
