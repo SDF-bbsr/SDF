@@ -14,7 +14,8 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
-    ChevronDown, ChevronRight, Edit3, Loader2, AlertCircle, PlusCircle, RefreshCw, CalendarDays, Search, History 
+    ChevronDown, ChevronRight, Edit3, Loader2, AlertCircle, PlusCircle, RefreshCw, CalendarDays, Search, History, Lightbulb, 
+    AlertTriangle, CheckCircle, TrendingDown, ListChecks // <-- ADDED ICONS
 } from 'lucide-react'; // Removed ChevronsLeft, ChevronsRight
 import { toast as sonnerToast, Toaster } from 'sonner';
 
@@ -46,6 +47,34 @@ interface ProductListItem {
     articleNumber: string; 
 }
 
+// ADD the NEW type definitions for the AI response
+interface FirestoreTimestamp {
+    _seconds: number;
+    _nanoseconds: number;
+  }
+  interface HighRiskProduct {
+    productName: string;
+    currentStockKg: number;
+    totalSoldKg: number;
+    recommendedReplenishmentKg: string;
+    notes: string;
+  }
+  interface StatusItem {
+    productName: string;
+    reason: string;
+  }
+  interface AIStockInsightResponse {
+    summary: string;
+    highRiskProducts: HighRiskProduct[];
+    statusReport: {
+      wellStocked: StatusItem[];
+      slowMoving: StatusItem[];
+    };
+    recommendations: string[];
+    generatedAt: FirestoreTimestamp;
+    sourceMonth: string;
+  }
+
 // const ITEMS_PER_PAGE = 30; // Removed
 const IST_TIMEZONE = 'Asia/Kolkata';
 
@@ -57,6 +86,13 @@ const formatTimestampToIST = (utcTimestamp: string | Date): string => {
             hour: '2-digit', minute: '2-digit', hour12: true
         });
     } catch (e) { return "Invalid Date"; }
+};
+
+// ADD this new helper function to format the Firestore timestamp object
+const formatFirestoreTimestamp = (ts: FirestoreTimestamp | undefined): string => {
+    if (!ts?._seconds) return 'N/A';
+    const date = new Date(ts._seconds * 1000);
+    return formatTimestampToIST(date);
 };
 
 const getCurrentMonthYYYYMM = () => {
@@ -97,9 +133,39 @@ export default function StockLedgerPage() {
 
     const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
+    const [restockInsight, setRestockInsight] = useState<AIStockInsightResponse | null>(null);
+    const [isInsightLoading, setIsInsightLoading] = useState(true);
+    const [isInsightExpanded, setIsInsightExpanded] = useState(false);
+
     // Removed pagination state: currentPage, pageCursors, hasNextPage
 
     const monthOptions = useMemo(() => getMonthOptions(), []);
+
+    // --- vvv MODIFY THIS useEffect HOOK vvv ---
+    useEffect(() => {
+        const fetchInsight = async () => {
+            setIsInsightLoading(true);
+            try {
+                const response = await fetch('/api/insights/getinsights/stock');
+                if (response.status === 404) {
+                    setRestockInsight(null);
+                    return; 
+                }
+                if (!response.ok) {
+                    throw new Error('Failed to fetch the restock analysis.');
+                }
+                // The API now returns the full structured object
+                const data: AIStockInsightResponse = await response.json();
+                setRestockInsight(data); // Set the entire object to state
+            } catch (error: any) {
+                console.error("Could not fetch AI insight:", error.message);
+                setRestockInsight(null);
+            } finally {
+                setIsInsightLoading(false);
+            }
+        };
+        fetchInsight();
+    }, []); // This runs once on component mount.
 
     const fetchProductList = useCallback(async () => {
         try {
@@ -296,12 +362,158 @@ export default function StockLedgerPage() {
         setExpandedRows(prev => ({ ...prev, [productArticleNo]: !prev[productArticleNo] }));
     };
 
-    // Removed handlePageNavigation function
+    const HighRiskTable = ({ products }: { products: HighRiskProduct[] }) => (
+        <div className="overflow-x-auto rounded-lg border bg-background">
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead className="font-bold text-destructive">Product</TableHead>
+                        <TableHead className="text-right font-bold text-destructive">Current Stock (kg)</TableHead>
+                        <TableHead className="text-right font-bold text-destructive">Replenish (kg)</TableHead>
+                        <TableHead className="font-bold text-destructive">Notes</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {products.map((p) => (
+                        <TableRow key={p.productName} className={p.currentStockKg < 0 ? 'bg-red-50 dark:bg-red-900/20' : ''}>
+                            <TableCell className="font-medium">{p.productName}</TableCell>
+                            <TableCell className={`text-right font-bold ${p.currentStockKg < 0 ? 'text-red-600' : 'text-amber-600'}`}>
+                                {p.currentStockKg.toFixed(3)}
+                            </TableCell>
+                            <TableCell className="text-right font-semibold text-blue-600 dark:text-blue-400">
+                                {p.recommendedReplenishmentKg}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                                <div className="flex items-center gap-2">
+                                    {p.notes.toLowerCase().includes('negative stock') && <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />}
+                                    <span className={p.notes.toLowerCase().includes('negative stock') ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+                                        {p.notes}
+                                    </span>
+                                </div>
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </div>
+    );
+
+    const RecommendationsCard = ({ recommendations }: { recommendations: string[] }) => (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                    <ListChecks className="h-5 w-5 text-blue-500" />
+                    AI Recommendations
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                <ul className="space-y-3">
+                    {recommendations.map((rec, index) => (
+                        <li key={index} className="flex items-start gap-3 text-sm">
+                            <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700 dark:bg-blue-800 dark:text-blue-200">
+                                {index + 1}
+                            </span>
+                            <p className="text-muted-foreground">{rec}</p>
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+
+    const StatusList = ({ title, items, icon: Icon, iconColor }: { title: string; items: StatusItem[]; icon: React.ElementType; iconColor: string; }) => (
+        <div>
+            <h4 className={`mb-3 flex items-center gap-2 text-md font-semibold ${iconColor}`}>
+                <Icon className="h-5 w-5" />
+                {title}
+            </h4>
+            <ul className="space-y-3">
+                {items.map(item => (
+                    <li key={item.productName} className="border-l-2 pl-3 text-sm">
+                        <p className="font-medium text-foreground">{item.productName}</p>
+                        <p className="text-xs text-muted-foreground">{item.reason}</p>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+
+    const StatusReport = ({ statusReport }: { statusReport: AIStockInsightResponse['statusReport'] }) => (
+        <Card>
+            <CardHeader><CardTitle className="text-lg">Status Report</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+                <StatusList title="Well-Stocked" items={statusReport.wellStocked} icon={CheckCircle} iconColor="text-green-600 dark:text-green-400" />
+                <StatusList title="Slow-Moving" items={statusReport.slowMoving} icon={TrendingDown} iconColor="text-orange-500 dark:text-orange-400" />
+            </CardContent>
+        </Card>
+    );
 
     return (
         <>
             <Toaster richColors position="top-right" />
             <div className="container mx-auto px-2 sm:px-4 py-8">
+                {isInsightLoading && (
+                    <Card className="mb-6 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                        <CardHeader className="flex flex-row items-center gap-3 py-3 px-4 sm:px-6">
+                            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                            <CardTitle className="text-base sm:text-lg text-blue-800 dark:text-blue-300">Loading AI Restock Analysis...</CardTitle>
+                        </CardHeader>
+                    </Card>
+                )}
+
+                {!isInsightLoading && restockInsight && (
+                     <Card className="mb-6 border-amber-300 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-900/20">
+                     <CardHeader className="p-0">
+                         <button 
+                             className="w-full flex justify-between items-center text-left px-4 py-3 sm:px-6"
+                             onClick={() => setIsInsightExpanded(!isInsightExpanded)}
+                             aria-expanded={isInsightExpanded}
+                         >
+                             <div className="flex items-center gap-3">
+                                 <Lightbulb className="h-6 w-6 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                                 <div>
+                                     <CardTitle className="text-base sm:text-lg text-amber-900 dark:text-amber-300">AI Stock Restock Insight</CardTitle>
+                                     <CardDescription className="text-xs mt-1">
+                                         Last generated: {formatFirestoreTimestamp(restockInsight.generatedAt)}
+                                     </CardDescription>
+                                 </div>
+                             </div>
+                             {isInsightExpanded ? (
+                                 <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform" />
+                             ) : (
+                                 <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform" />
+                             )}
+                         </button>
+                     </CardHeader>
+                     {isInsightExpanded && (
+                         <CardContent className="px-4 py-4 sm:px-6 space-y-8">
+                             {/* 1. Overall Summary */}
+                             <p className="text-sm text-foreground/80 border-l-4 border-amber-400 pl-4">
+                                 {restockInsight.summary}
+                             </p>
+
+                             {/* 2. High-Risk Products Table */}
+                             <div>
+                                 <h3 className="mb-3 text-lg font-semibold text-destructive flex items-center gap-2">
+                                     <AlertTriangle className="h-5 w-5" />
+                                     High-Risk Products (Action Required)
+                                 </h3>
+                                 <HighRiskTable products={restockInsight.highRiskProducts} />
+                             </div>
+                             
+                             {/* 3. Recommendations & Status in a Grid */}
+                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                 <div className="lg:col-span-2">
+                                     <RecommendationsCard recommendations={restockInsight.recommendations} />
+                                 </div>
+                                 <div className="lg:col-span-1">
+                                     <StatusReport statusReport={restockInsight.statusReport} />
+                                 </div>
+                             </div>
+                         </CardContent>
+                     )}
+                 </Card>
+                )}
                 <Card>
                     <CardHeader className="px-3 sm:px-6">
                         <div className="flex flex-col md:flex-row justify-between md:items-center gap-3">

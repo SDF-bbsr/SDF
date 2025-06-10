@@ -28,13 +28,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Loader2,
-  ListFilter,
-  PackageSearch,
-  TrendingUp,
-  ChevronLeft,
-  ChevronRight,
-  // PieChart as PieChartIcon, // Import if you intend to use it as icon
+  Loader2, ListFilter, PackageSearch, TrendingUp, ChevronLeft, ChevronRight,
+  Sparkles, ChevronDown, CalendarRange, Star, Gem, Lightbulb, AlertTriangle, TrendingDown, DollarSign, Target, Award // <-- ADDED ICONS
 } from 'lucide-react';
 import { toast as sonnerToast, Toaster } from 'sonner';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -73,6 +68,67 @@ interface ItemPerformanceApiResponse {
   grandTotals: GrandTotals;
 }
 
+// --- vvv ADD THESE NEW TYPE DEFINITIONS vvv ---
+interface FirestoreTimestamp {
+  _seconds: number;
+  _nanoseconds: number;
+}
+interface DailyMoverItem {
+  productName: string;
+  yesterdaySales: number;
+  averageDailySales: number;
+  percentageChange: number;
+}
+interface WeeklyMoverItem {
+  productName: string;
+  changePercentage: number;
+}
+interface ConsistentPerformerItem {
+  productName: string;
+  averageDailySales: number;
+}
+interface ProfitQuadrantProduct {
+  productName: string;
+  salesVolume: number;
+  profitMargin: number;
+}
+interface ProfitQuadrantSection {
+  narrative: string;
+  products: ProfitQuadrantProduct[];
+}
+interface AIProductPerformanceResponse {
+  consistentPerformers: {
+    narrative: string;
+    products: ConsistentPerformerItem[];
+  };
+  dailyMovers: {
+    narrative: string;
+    standoutPerformers: DailyMoverItem[];
+    underperformers: DailyMoverItem[];
+  };
+  lastUpdated: FirestoreTimestamp;
+  priceSweetSpot: {
+    narrative: string;
+    sweetSpotRange: [number, number];
+  };
+  profitQuadrant: {
+    cashCows: ProfitQuadrantSection;
+    opportunities: ProfitQuadrantSection;
+    problemChildren: ProfitQuadrantSection;
+    stars: ProfitQuadrantSection;
+  };
+  sourceDateRange: {
+    start: string;
+    end: string;
+  };
+  type: string;
+  weeklyMovers: {
+    coolingOff: WeeklyMoverItem[];
+    risingStars: WeeklyMoverItem[];
+  };
+}
+// --- ^^^ END OF NEW TYPE DEFINITIONS ^^^ ---
+
 type QuickPeriod = 'today' | 'last7d' | 'last30d' | 'thisWeek' | 'thisMonth' | 'custom';
 
 const IST_TIMEZONE_CLIENT = 'Asia/Kolkata';
@@ -102,6 +158,11 @@ export default function ItemPerformancePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  const [productInsight, setProductInsight] = useState<AIProductPerformanceResponse | null>(null);
+  const [isInsightLoading, setIsInsightLoading] = useState(true);
+  const [insightError, setInsightError] = useState<string | null>(null);
+  const [isInsightExpanded, setIsInsightExpanded] = useState(false); // To control the collapsible card
 
   const todayForInputMax = useMemo(() => getISODateStringForClient(getNowInClientIST()), []);
 
@@ -190,6 +251,31 @@ export default function ItemPerformancePage() {
     }
   }, [effectiveDateRange, fetchItemPerformance]);
 
+  useEffect(() => {
+    const fetchProductInsight = async () => {
+      setIsInsightLoading(true);
+      setInsightError(null);
+      try {
+        const response = await fetch('/api/insights/getinsights/product');
+        if (response.status === 404) {
+          setInsightError('No product performance insight has been generated yet.');
+          return;
+        }
+        if (!response.ok) {
+          throw new Error('Failed to fetch product performance analysis.');
+        }
+        const data: AIProductPerformanceResponse = await response.json();
+        setProductInsight(data);
+      } catch (err: any) {
+        console.error("Could not fetch AI product insight:", err);
+        setInsightError(err.message);
+      } finally {
+        setIsInsightLoading(false);
+      }
+    };
+    fetchProductInsight();
+  }, []); // Runs only once on mount
+
   const handleApplyCustomRange = () => {
     if (activeQuickPeriod === 'custom') {
       if (!customDateRange.startDate || !customDateRange.endDate) {
@@ -274,9 +360,162 @@ export default function ItemPerformancePage() {
     );
   };
 
+  const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+  const formatTimestamp = (ts: FirestoreTimestamp | undefined) => {
+    if (!ts?._seconds) return 'N/A';
+    return new Date(ts._seconds * 1000).toLocaleString('en-IN', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const ProfitQuadrantCard = ({ title, icon: Icon, narrative, products, className }: { title: string, icon: React.ElementType, narrative: string, products: ProfitQuadrantProduct[], className: string }) => (
+    <Card className={`flex flex-col ${className}`}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-md">
+          <Icon className="h-5 w-5" /> {title}
+        </CardTitle>
+        <CardDescription className="text-xs pt-1">{narrative}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex-grow">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="px-2 text-xs h-8">Product</TableHead>
+              <TableHead className="text-right px-2 text-xs h-8">Sales</TableHead>
+              <TableHead className="text-right px-2 text-xs h-8">Margin</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {products.map(p => (
+              <TableRow key={p.productName}>
+                <TableCell className="font-medium text-xs px-2 py-1.5">{p.productName}</TableCell>
+                <TableCell className="text-right text-xs px-2 py-1.5">{formatCurrency(p.salesVolume)}</TableCell>
+                <TableCell className="text-right text-xs px-2 py-1.5">{(p.profitMargin * 100).toFixed(1)}%</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+
+  const MoverList = ({ title, items, icon: Icon, className }: { title: string; items: { productName: string; percentageChange: number }[] | { productName: string; changePercentage: number }[]; icon: React.ElementType, className: string }) => (
+    <div>
+      <h4 className={`flex items-center gap-2 font-semibold mb-2 ${className}`}>
+        <Icon className="h-4 w-4" /> {title}
+      </h4>
+      <ul className="space-y-1.5 text-sm">
+        {items.map(item => {
+          const change = 'percentageChange' in item ? item.percentageChange : item.changePercentage;
+          return (
+            <li key={item.productName} className="flex justify-between items-center text-xs border-b pb-1">
+              <span>{item.productName}</span>
+              <span className={`font-bold ${change > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {change.toFixed(0)}%
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
+
+
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4">
       <Toaster richColors position="top-right" />
+       {/* --- vvv ADD THIS ENTIRE NEW AI ANALYZER CARD vvv --- */}
+       <Card className="mb-6 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+        <CardHeader className="p-0">
+          <button
+            className="w-full flex justify-between items-center text-left p-4"
+            onClick={() => setIsInsightExpanded(!isInsightExpanded)}
+            aria-expanded={isInsightExpanded}
+          >
+            <div className="flex items-center gap-3">
+              <Sparkles className="h-7 w-7 text-blue-500 flex-shrink-0" />
+              <div>
+                <CardTitle className="text-lg text-blue-900 dark:text-blue-200">AI Product Performance Analyzer</CardTitle>
+                {!isInsightLoading && productInsight && (
+                  <CardDescription className="text-xs mt-1">
+                    Updated: {formatTimestamp(productInsight.lastUpdated)} | Data for: {productInsight.sourceDateRange.start} to {productInsight.sourceDateRange.end}
+                  </CardDescription>
+                )}
+              </div>
+            </div>
+            {isInsightExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </button>
+        </CardHeader>
+        
+        {isInsightExpanded && (
+          <CardContent className="p-4 space-y-6">
+            {isInsightLoading && <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin"/> Loading insights...</div>}
+            {insightError && <div className="text-destructive flex items-center gap-2"><AlertTriangle className="h-4 w-4"/> {insightError}</div>}
+            {productInsight && !isInsightLoading && !insightError && (
+              <div className="space-y-6">
+
+                {/* --- Movers Section --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Daily Movers</CardTitle><CardDescription className="text-xs pt-1">{productInsight.dailyMovers.narrative}</CardDescription></CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                      <MoverList title="Standout Performers" items={productInsight.dailyMovers.standoutPerformers} icon={TrendingUp} className="text-green-700 dark:text-green-400" />
+                      <MoverList title="Underperformers" items={productInsight.dailyMovers.underperformers} icon={TrendingDown} className="text-red-600 dark:text-red-400" />
+                    </CardContent>
+                  </Card>
+                   <Card>
+                    <CardHeader><CardTitle className="text-base">Weekly Movers</CardTitle></CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                      <MoverList title="Rising Stars" items={productInsight.weeklyMovers.risingStars} icon={TrendingUp} className="text-green-700 dark:text-green-400" />
+                      <MoverList title="Cooling Off" items={productInsight.weeklyMovers.coolingOff} icon={TrendingDown} className="text-red-600 dark:text-red-400" />
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* --- Profit Quadrant Section --- */}
+                <div>
+                  <h3 className="text-xl font-bold mb-4 text-center">Profit Quadrant Analysis</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <ProfitQuadrantCard title="Stars" icon={Star} narrative={productInsight.profitQuadrant.stars.narrative} products={productInsight.profitQuadrant.stars.products} className="bg-green-50 dark:bg-green-900/30 border-green-200" />
+                    <ProfitQuadrantCard title="Cash Cows" icon={Gem} narrative={productInsight.profitQuadrant.cashCows.narrative} products={productInsight.profitQuadrant.cashCows.products} className="bg-sky-50 dark:bg-sky-900/30 border-sky-200" />
+                    <ProfitQuadrantCard title="Opportunities" icon={Lightbulb} narrative={productInsight.profitQuadrant.opportunities.narrative} products={productInsight.profitQuadrant.opportunities.products} className="bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200" />
+                    <ProfitQuadrantCard title="Problem Children" icon={AlertTriangle} narrative={productInsight.profitQuadrant.problemChildren.narrative} products={productInsight.profitQuadrant.problemChildren.products} className="bg-red-50 dark:bg-red-900/30 border-red-200" />
+                  </div>
+                </div>
+
+                {/* --- Consistent Performers & Price Sweet Spot --- */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                   <Card className="lg:col-span-2">
+                      <CardHeader><CardTitle className="text-base flex items-center gap-2"><Award className="h-5 w-5 text-indigo-500" /> Consistent Performers</CardTitle><CardDescription className="text-xs pt-1">{productInsight.consistentPerformers.narrative}</CardDescription></CardHeader>
+                      <CardContent>
+                        <ul className="space-y-2">
+                           {productInsight.consistentPerformers.products.map(p => (
+                            <li key={p.productName} className="flex justify-between text-sm border-b pb-1.5">
+                              <span>{p.productName}</span>
+                              <span className="font-semibold text-muted-foreground">{formatCurrency(p.averageDailySales)} <span className="text-xs font-normal">/ day</span></span>
+                            </li>
+                           ))}
+                        </ul>
+                      </CardContent>
+                   </Card>
+                   <Card className="bg-fuchsia-100/60 dark:bg-fuchsia-900/30 border-fuchsia-300 flex flex-col justify-center items-center text-center">
+                      <CardHeader><CardTitle className="text-base flex items-center gap-2"><Target className="h-5 w-5 text-fuchsia-600" /> Price Sweet Spot</CardTitle></CardHeader>
+                      <CardContent>
+                        <div className="text-3xl font-bold text-fuchsia-800 dark:text-fuchsia-300">
+                          {formatCurrency(productInsight.priceSweetSpot.sweetSpotRange[0])} - {formatCurrency(productInsight.priceSweetSpot.sweetSpotRange[1])}
+                        </div>
+                        <p className="text-xs text-fuchsia-700 dark:text-fuchsia-400 mt-2">{productInsight.priceSweetSpot.narrative}</p>
+                      </CardContent>
+                   </Card>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+      {/* --- ^^^ END OF AI ANALYZER CARD ^^^ --- */}
       {/* Filters Section */}
       <Card className="mb-6">
         <CardHeader>

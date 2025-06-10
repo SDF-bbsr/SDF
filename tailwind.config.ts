@@ -13,6 +13,7 @@ const config: Config = {
   },
   plugins: [
     // Any Tailwind plugins you're using (e.g., @tailwindcss/typography)
+    require('@tailwindcss/typography'),
   ],
 };
 
