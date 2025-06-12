@@ -35,7 +35,6 @@ import {
 import { toast as sonnerToast, Toaster } from "sonner";
 import { Loader2, XCircle, CheckCircle2, ScanLine, LogOut, Camera, UploadCloud, AlertTriangle } from "lucide-react";
 import { useUser } from "@/context/UserContext";
-import Quagga, { QuaggaConfig, QuaggaDetectionResult } from 'quagga';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 
@@ -59,7 +58,6 @@ interface BulkProcessedItem extends ScannedItemDetails {
   originalBarcode: string;
 }
 
-const QUAGGA_SCANNER_REGION_ID = "quagga-scanner-live-region";
 const BARCODE_PREFIX = "2110000";
 const ARTICLE_NO_IN_BARCODE_LENGTH = 9;
 const WEIGHT_GRAMS_IN_BARCODE_LENGTH = 5;
@@ -75,13 +73,13 @@ export default function VendorScanPage() {
   const [scannedItem, setScannedItem] = useState<ScannedItemDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // --- New state and refs for BarcodeDetector API ---
   const [isScannerActive, setIsScannerActive] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
-  const [isQuaggaInitialized, setIsQuaggaInitialized] = useState(false);
-
+  const [isApiSupported, setIsApiSupported] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const animationFrameId = useRef<number | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const scannerContainerRef = useRef<HTMLDivElement>(null);
-  const firstScannerEffectRun = useRef(true);
 
   const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
   const [bulkBarcodeInput, setBulkBarcodeInput] = useState("");
@@ -95,6 +93,16 @@ export default function VendorScanPage() {
     if (!user) { router.push('/vendor/login'); } 
     else { if (!isScannerActive && !isBulkAddModalOpen) { barcodeInputRef.current?.focus(); } }
   }, [user, router, isScannerActive, isBulkAddModalOpen]);
+
+  // Check for BarcodeDetector API support on component mount
+  useEffect(() => {
+    if ('BarcodeDetector' in window) {
+      setIsApiSupported(true);
+    } else {
+      console.warn("Barcode Detector API is not supported in this browser.");
+      sonnerToast.warning("Built-in scanner is not supported on this device/browser.");
+    }
+  }, []);
 
 
   const parseBarcode = useCallback((fullBarcode: string): { articleNo: string; weightGrams: number } | null => {
@@ -138,46 +146,107 @@ export default function VendorScanPage() {
     } finally { setIsLoading(false); if (!scannedValue) barcodeInputRef.current?.focus(); }
   }, [barcode, parseBarcode]);
 
-
-  const onDetected = useCallback((result: QuaggaDetectionResult) => {
-    if (result && result.codeResult && result.codeResult.code) {
-      console.log("QuaggaJS Detected:", result.codeResult.code);
-      sonnerToast.info("Barcode Scanned via Camera!");
-      setBarcode(result.codeResult.code);
-      setIsScannerActive(false);
-      setScannerError(null);
-      handleBarcodeSubmit(undefined, result.codeResult.code);
+  // --- New Effect to manage the scanner lifecycle ---
+  useEffect(() => {
+    if (!isScannerActive || !isApiSupported) {
+      return;
     }
-  }, [handleBarcodeSubmit]);
 
-  const stopQuaggaScanner = useCallback(() => {
-    if (isQuaggaInitialized) { Quagga.offDetected(onDetected); Quagga.offProcessed(); Quagga.stop(); setIsQuaggaInitialized(false); console.log("Quagga scanner stopped.");}
-  }, [onDetected, isQuaggaInitialized]);
-  
-  useEffect(() => { return () => { stopQuaggaScanner(); }; }, [stopQuaggaScanner]);
-  useEffect(() => { 
-    if (firstScannerEffectRun.current) { firstScannerEffectRun.current = false; return; }
-    if (isScannerActive) { if (!scannerContainerRef.current) { setScannerError("Scanner UI element not ready."); setIsScannerActive(false); return; } setScannerError(null);
-      const quaggaConfig: QuaggaConfig = { inputStream: { name: "Live", type: "LiveStream", target: scannerContainerRef.current!, constraints: { facingMode: "environment", }, area: { top: "20%", right: "5%", left: "5%", bottom: "20%" }, singleChannel: false }, numOfWorkers: navigator.hardwareConcurrency > 1 ? navigator.hardwareConcurrency -1 : 1, locate: true, frequency: 10, decoder: { readers: [ "code_128_reader", "ean_reader" ], debug: { drawBoundingBox: true, showFrequency: false, drawScanline: true, showPattern: false, }, multiple: false, }, locator: { halfSample: true, patchSize: "large", debug: { showCanvas: false }, }, };
-      Quagga.init(quaggaConfig, (err: any) => { if (err) { console.error("Quagga init error:", err); const errMsg = typeof err === 'string' ? err : (err.message || 'Unknown init error'); setScannerError(`Scanner init failed: ${errMsg}`); sonnerToast.error(`Scanner init failed: ${errMsg}`); setIsScannerActive(false); setIsQuaggaInitialized(false); return; } console.log("Quagga initialized. Starting..."); setIsQuaggaInitialized(true); Quagga.start(); Quagga.onDetected(onDetected); Quagga.onProcessed((result: any) => { const drawingCtx = Quagga.canvas.ctx.overlay; const drawingCanvas = Quagga.canvas.dom.overlay; if (result && drawingCanvas && drawingCtx) { if (result.boxes) { drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.width as any || "0"), parseInt(drawingCanvas.height as any || "0")); result.boxes.filter((box: any) => box !== result.box).forEach((box: any) => { Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: 'green', lineWidth: 2 }); }); } if (result.box) { Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: '#00F', lineWidth: 2 }); } if (result.codeResult && result.codeResult.code) { Quagga.ImageDebug.drawPath(result.line, { x: 'x', y: 'y' }, drawingCtx, { color: 'red', lineWidth: 3 }); } } }); });
-    } else { stopQuaggaScanner(); }
-  }, [isScannerActive, onDetected, stopQuaggaScanner]);
+    let stream: MediaStream | null = null;
+    const barcodeDetector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
+
+    const stopScan = () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
+
+    const scanForBarcode = async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2) {
+        animationFrameId.current = requestAnimationFrame(scanForBarcode);
+        return;
+      }
+
+      try {
+        const barcodes = await barcodeDetector.detect(videoRef.current);
+        if (barcodes.length > 0) {
+          const detectedValue = barcodes[0].rawValue;
+          if (detectedValue) {
+            console.log("BarcodeDetector API Detected:", detectedValue);
+            sonnerToast.info("Barcode Scanned via Camera!");
+            setIsScannerActive(false); // This triggers the cleanup in the return function
+            setBarcode(detectedValue);
+            handleBarcodeSubmit(undefined, detectedValue);
+          } else {
+            animationFrameId.current = requestAnimationFrame(scanForBarcode);
+          }
+        } else {
+          animationFrameId.current = requestAnimationFrame(scanForBarcode);
+        }
+      } catch (err: any) {
+        console.error("Error during barcode detection:", err);
+        setScannerError(`Scanning error: ${err.message}`);
+        setIsScannerActive(false); // Stop on error
+      }
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(mediaStream => {
+        stream = mediaStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().then(() => {
+            animationFrameId.current = requestAnimationFrame(scanForBarcode);
+          });
+        }
+      })
+      .catch(err => {
+        console.error("Failed to get user media", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setScannerError(`Camera access failed: ${errMsg}. Please grant permission and try again.`);
+        sonnerToast.error(`Camera access failed. Please grant permission.`);
+        setIsScannerActive(false);
+      });
+
+    // Cleanup function
+    return () => {
+      stopScan();
+    };
+  }, [isScannerActive, isApiSupported, handleBarcodeSubmit]);
 
 
   const toggleCameraScanner = () => {
-    if (isScannerActive) setIsScannerActive(false);
-    else { setError(null); setScannedItem(null); setBarcode(""); setScannerError(null); setIsScannerActive(true); }
+    if (isScannerActive) {
+      setIsScannerActive(false);
+    } else {
+      if (!isApiSupported) {
+        setScannerError("Barcode scanning is not supported by your browser. Try updating it or using a different one like Chrome on Android.");
+        sonnerToast.error("Your browser doesn't support the built-in scanner.");
+        return;
+      }
+      setError(null);
+      setScannedItem(null);
+      setBarcode("");
+      setScannerError(null);
+      setIsScannerActive(true);
+    }
   };
 
   const handleConfirmSale = async () => { 
     if (!scannedItem || !user?.id || !originalScannedBarcode) { sonnerToast.error("No item/user/barcode for sale."); return; }
     setIsConfirmingSale(true); setError(null);
     
-    // MODIFIED: Add staffName to payload
     const salePayload = { 
       barcodeScanned: originalScannedBarcode, 
       staffId: user.id, 
-      staffName: user.name || "Unknown Staff", // Added staffName
+      staffName: user.name || "Unknown Staff",
       weightGrams: scannedItem.weightGrams, 
       calculatedSellPrice: scannedItem.calculatedSellPrice, 
       articleNo: scannedItem.articleNumber, 
@@ -204,110 +273,53 @@ export default function VendorScanPage() {
   };
 
   const handleProcessBulkBarcodes = async () => {
-    if (!bulkBarcodeInput.trim()) {
-      sonnerToast.info("Please paste barcodes into the text area.");
-      return;
-    }
-    setIsProcessingBulk(true);
-    setBulkProcessedItems([]);
-    setBulkInvalidBarcodes([]);
+    if (!bulkBarcodeInput.trim()) { sonnerToast.info("Please paste barcodes into the text area."); return; }
+    setIsProcessingBulk(true); setBulkProcessedItems([]); setBulkInvalidBarcodes([]);
     const barcodeLines = bulkBarcodeInput.trim().split('\n');
-    const processed: BulkProcessedItem[] = [];
-    const invalids: string[] = [];
-
+    const processed: BulkProcessedItem[] = []; const invalids: string[] = [];
     for (const line of barcodeLines) {
-      const currentBarcode = line.trim();
-      if (!currentBarcode) continue;
-
+      const currentBarcode = line.trim(); if (!currentBarcode) continue;
       const parsed = parseBarcode(currentBarcode);
-      if (!parsed) {
-        invalids.push(currentBarcode);
-        continue;
-      }
+      if (!parsed) { invalids.push(currentBarcode); continue; }
       const { articleNo, weightGrams } = parsed;
       try {
-        // This fetch will now benefit from server-side caching in /api/products/lookup
         const response = await fetch("/api/products/lookup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ articleNo, weightGrams }), });
-        if (!response.ok) {
-          const errData = await response.json();
-          invalids.push(`${currentBarcode} (${errData.message || 'Product not found'})`);
-          continue;
-        }
+        if (!response.ok) { const errData = await response.json(); invalids.push(`${currentBarcode} (${errData.message || 'Product not found'})`); continue; }
         const itemDetails: ScannedItemDetails = await response.json();
         processed.push({ ...itemDetails, originalBarcode: currentBarcode });
-      } catch (err) {
-        invalids.push(`${currentBarcode} (Lookup failed)`);
-      }
+      } catch (err) { invalids.push(`${currentBarcode} (Lookup failed)`); }
     }
-    setBulkProcessedItems(processed);
-    setBulkInvalidBarcodes(invalids);
-    setIsProcessingBulk(false);
+    setBulkProcessedItems(processed); setBulkInvalidBarcodes(invalids); setIsProcessingBulk(false);
     if (processed.length > 0) sonnerToast.success(`${processed.length} items processed successfully.`);
     if (invalids.length > 0) sonnerToast.warning(`${invalids.length} barcodes were invalid or not found.`);
   };
 
   const handleConfirmBulkSale = async () => {
-    if (bulkProcessedItems.length === 0 || !user?.id) {
-      sonnerToast.error("No valid items to confirm or user not identified.");
-      return;
-    }
+    if (bulkProcessedItems.length === 0 || !user?.id) { sonnerToast.error("No valid items to confirm or user not identified."); return; }
     if (!confirm(`Are you sure you want to confirm the sale of ${bulkProcessedItems.length} item(s)?`)) return;
-
     setIsConfirmingBulkSale(true);
-
     const salesToRecordPayload = bulkProcessedItems.map(item => ({
-      barcodeScanned: item.originalBarcode,
-      articleNo: item.articleNumber,
-      weightGrams: item.weightGrams,
-      staffId: user.id, 
-      // Add product name here for bulk aggregation if needed by bulk API directly,
-      // otherwise bulk API will look it up or get it from its own product lookup.
-      // For the current bulk API design, it re-looks up product details.
-      // So only staffId is strictly needed from user context here.
+      barcodeScanned: item.originalBarcode, articleNo: item.articleNumber,
+      weightGrams: item.weightGrams, staffId: user.id, 
     }));
-
     try {
-      const response = await fetch("/api/sales/bulk-record", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sales: salesToRecordPayload }),
-      });
+      const response = await fetch("/api/sales/bulk-record", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sales: salesToRecordPayload }), });
       const result = await response.json();
-      if (!response.ok && response.status !== 207) {
-        throw new Error(result.message || "Bulk sale confirmation failed.");
-      }
-      
+      if (!response.ok && response.status !== 207) { throw new Error(result.message || "Bulk sale confirmation failed."); }
       let successMsg = "";
-      if (result.successfulRecords > 0) {
-        successMsg += `${result.successfulRecords} sales confirmed. `;
-      }
+      if (result.successfulRecords > 0) { successMsg += `${result.successfulRecords} sales confirmed. `; }
       if (result.failedRecords > 0) {
         successMsg += `${result.failedRecords} failed.`;
         sonnerToast.warning(`Bulk sale: ${result.failedRecords} items failed.`);
-        if (result.errors && result.errors.length > 0) {
-            console.error("Bulk sale failures:", result.errors);
-            result.errors.forEach((err: {barcode: string, message: string}) => {
-                sonnerToast.error(`Barcode ${err.barcode}: ${err.message}`);
-            });
-        }
-      } else if (result.successfulRecords > 0) {
-        sonnerToast.success(successMsg || "Bulk sales processed.");
-      } else if (!result.message && result.successfulRecords === 0 && result.failedRecords === 0) {
-        sonnerToast.info("No sales were processed in the bulk request.");
+        result.errors?.forEach((err: {barcode: string, message: string}) => { sonnerToast.error(`Barcode ${err.barcode}: ${err.message}`); });
+      } else if (result.successfulRecords > 0) { sonnerToast.success(successMsg || "Bulk sales processed.");
+      } else if (!result.message && result.successfulRecords === 0 && result.failedRecords === 0) { sonnerToast.info("No sales were processed in the bulk request.");
       } else if (result.message) {
-        if (response.ok || response.status === 207) sonnerToast.success(result.message);
-        else sonnerToast.error(result.message);
+        if (response.ok || response.status === 207) sonnerToast.success(result.message); else sonnerToast.error(result.message);
       }
-
-      setIsBulkAddModalOpen(false);
-      setBulkBarcodeInput("");
-      setBulkProcessedItems([]);
-      setBulkInvalidBarcodes([]);
-    } catch (err: any) {
-      sonnerToast.error("Error confirming bulk sale: " + err.message);
-    } finally {
-      setIsConfirmingBulkSale(false);
-    }
+      setIsBulkAddModalOpen(false); setBulkBarcodeInput(""); setBulkProcessedItems([]); setBulkInvalidBarcodes([]);
+    } catch (err: any) { sonnerToast.error("Error confirming bulk sale: " + err.message);
+    } finally { setIsConfirmingBulkSale(false); }
   };
 
   const handleLogout = () => { logout(); if (isScannerActive) setIsScannerActive(false); router.push('/'); };
@@ -315,7 +327,15 @@ export default function VendorScanPage() {
 
   return (
     <>
-      <style jsx global>{` #${QUAGGA_SCANNER_REGION_ID} { position: relative; width: 100%; min-height: 280px; overflow: hidden; background-color: #333; } #${QUAGGA_SCANNER_REGION_ID} video, #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { position: absolute; left: 0; top: 0; width: 100% !important; height: 100% !important; } #${QUAGGA_SCANNER_REGION_ID} video { object-fit: cover; } #${QUAGGA_SCANNER_REGION_ID} canvas.drawingBuffer { z-index: 10; } `}</style>
+      <style jsx global>{`
+        @keyframes vendor-scan-line-anim {
+          0% { top: 0; }
+          100% { top: calc(100% - 2px); }
+        }
+        .animate-scan-line-vendor {
+          animation: vendor-scan-line-anim 2.5s ease-in-out infinite alternate;
+        }
+      `}</style>
       <Toaster richColors position="top-right" />
       <main className="flex min-h-screen flex-col items-center justify-start p-4 md:p-8 bg-slate-50 dark:bg-slate-900">
         <Card className="w-full max-w-md">
@@ -328,10 +348,19 @@ export default function VendorScanPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
-              <Button type="button" onClick={toggleCameraScanner} variant="outline" className="w-full" disabled={isLoading || isConfirmingSale || isConfirmingBulkSale}>
-                <Camera className="mr-2 h-4 w-4" />{isScannerActive ? "Stop Camera Scan" : "Scan with Camera"}
+              <Button type="button" onClick={toggleCameraScanner} variant="outline" className="w-full" disabled={!isApiSupported || isLoading || isConfirmingSale || isConfirmingBulkSale}>
+                <Camera className="mr-2 h-4 w-4" />
+                {isScannerActive ? "Stop Camera Scan" : (isApiSupported ? "Scan with Camera" : "Scanner Not Supported")}
               </Button>
-              {isScannerActive && (<div className="my-2 p-1 border rounded-md bg-gray-200 dark:bg-gray-800 shadow-inner"><div id={QUAGGA_SCANNER_REGION_ID} ref={scannerContainerRef}></div></div>)}
+              {isScannerActive && (
+                <div className="my-2 p-1 border rounded-md bg-gray-900 shadow-inner relative overflow-hidden aspect-video">
+                  <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-[90%] h-[50%] border-2 border-dashed border-white/50 rounded-lg" />
+                  </div>
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500 animate-scan-line-vendor" />
+                </div>
+              )}
               {scannerError && (<div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 dark:bg-red-900/30 p-3 rounded-md"><XCircle className="h-5 w-5 shrink-0" /><p>{scannerError}</p></div>)}
             </div>
             <form onSubmit={(e) => handleBarcodeSubmit(e)} className="space-y-2">

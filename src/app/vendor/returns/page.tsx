@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, ArrowLeft, Undo2, Search, ScanLine, CheckCircle, Camera, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast as sonnerToast, Toaster } from 'sonner';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import Quagga, { QuaggaConfig, QuaggaDetectionResult } from 'quagga';
+
 
 interface SaleTransaction {
   id: string;
@@ -43,7 +43,6 @@ const ARTICLE_NO_IN_BARCODE_LENGTH = 9;
 const WEIGHT_GRAMS_IN_BARCODE_LENGTH = 5;
 const CHECK_DIGIT_PLACEHOLDER = "1";
 
-const QUAGGA_SCANNER_REGION_ID_RETURNS = "quagga-scanner-live-region-returns";
 
 export default function VendorReturnsPage() {
   const { user, logout } = useUser();
@@ -61,23 +60,33 @@ export default function VendorReturnsPage() {
   const [manualSearch, setManualSearch] = useState({ articleNo: '', weightGrams: '' });
   const [currentSearchTerm, setCurrentSearchTerm] = useState('');
 
+  // --- State and Refs for BarcodeDetector API ---
   const [isScannerActive, setIsScannerActive] = useState(false);
   const [scannerError, setScannerError] = useState<string | null>(null);
-  const [isQuaggaInitialized, setIsQuaggaInitialized] = useState(false);
-  const scannerContainerRef = useRef<HTMLDivElement>(null);
+  const [isApiSupported, setIsApiSupported] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const animationFrameId = useRef<number | null>(null);
   const searchBarcode_InputRef = useRef<HTMLInputElement>(null);
-  const firstScannerEffectRunReturns = useRef(true);
 
   useEffect(() => {
     if (!user) { router.push('/vendor/login'); }
     else { if(!isScannerActive && searchBarcode_InputRef.current) searchBarcode_InputRef.current.focus(); }
   }, [user, router, isScannerActive]);
 
+  // Check for BarcodeDetector API support on component mount
+  useEffect(() => {
+    if ('BarcodeDetector' in window) {
+      setIsApiSupported(true);
+    } else {
+      console.warn("Barcode Detector API is not supported in this browser.");
+      sonnerToast.warning("Built-in scanner is not supported on this device/browser.");
+    }
+  }, []);
 
   const findSalesByBarcodeGlobal = useCallback(async (barcodeToSearch: string, page: number = 1) => {
     if (!barcodeToSearch.trim()) return;
     setIsSearching(true); 
-    if (page === 1) { // Reset only for a new search, not for pagination
+    if (page === 1) { 
         setFoundSalesByBarcode([]);
         setSelectedSaleForReturn(null);
         setSearchPagination(null);
@@ -96,11 +105,10 @@ export default function VendorReturnsPage() {
       if (data.transactions && data.transactions.length > 0) {
         setFoundSalesByBarcode(data.transactions);
         setSearchPagination(data.pagination);
-        // Auto-select if it's the very first page, and only one absolute result exists for the barcode
         if (page === 1 && data.transactions.length === 1 && data.pagination.totalItems === 1) {
              setSelectedSaleForReturn(data.transactions[0]);
              sonnerToast.success("1 sale found and auto-selected for return.");
-        } else if (page === 1 && data.pagination.totalItems > 0) { // Check totalItems for the toast
+        } else if (page === 1 && data.pagination.totalItems > 0) {
             sonnerToast.info(`${data.pagination.totalItems} sale(s) found. Please select one to return if needed.`);
         }
       } else {
@@ -110,95 +118,106 @@ export default function VendorReturnsPage() {
       }
     } catch (err: any) { setError(err.message); sonnerToast.error(err.message || 'Error finding sales.'); setFoundSalesByBarcode([]); setSearchPagination(null);
     } finally { setIsSearching(false); if(!isScannerActive && searchBarcode_InputRef.current) searchBarcode_InputRef.current.focus(); }
-  }, [isScannerActive]); // isScannerActive dependency removed as focus logic is handled in main useEffect
+  }, [isScannerActive]);
 
-  const onDetectedReturns = useCallback((result: QuaggaDetectionResult) => {
-    if (result && result.codeResult && result.codeResult.code) {
-      const scannedCode = result.codeResult.code;
-      setSearchBarcode(scannedCode);
-      setIsScannerActive(false);
-      setScannerError(null);
-      sonnerToast.success("Barcode Scanned! Searching...");
-      findSalesByBarcodeGlobal(scannedCode, 1);
+
+  // --- New Effect to manage the BarcodeDetector API lifecycle ---
+  useEffect(() => {
+    if (!isScannerActive || !isApiSupported) {
+      return; // Do nothing if scanner is off or not supported
     }
-  }, [findSalesByBarcodeGlobal]);
 
-  const stopQuaggaScannerReturns = useCallback(() => { if (isQuaggaInitialized) { Quagga.offDetected(onDetectedReturns); Quagga.offProcessed(); Quagga.stop(); setIsQuaggaInitialized(false);}}, [onDetectedReturns, isQuaggaInitialized]);
-  
-  useEffect(() => { return () => { stopQuaggaScannerReturns(); }; }, [stopQuaggaScannerReturns]);
-  
-  useEffect(() => { 
-    if (firstScannerEffectRunReturns.current) { 
-      firstScannerEffectRunReturns.current = false; 
-      return; 
-    } 
-    if (isScannerActive) { 
-      if (!scannerContainerRef.current) {
-        setScannerError("Scanner UI element not ready.");
-        setIsScannerActive(false);
+    let stream: MediaStream | null = null;
+    // Note: 'ean_13' is common for retail barcodes, along with 'code_128'
+    const barcodeDetector = new BarcodeDetector({ formats: ['code_128', 'ean_13'] });
+
+    const stopScan = () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
+
+    const scanForBarcode = async () => {
+      if (!videoRef.current || videoRef.current.readyState < 2) {
+        animationFrameId.current = requestAnimationFrame(scanForBarcode);
         return;
       }
-      const quaggaConfig: QuaggaConfig = { 
-        inputStream: { 
-          name: "Live", 
-          type: "LiveStream", 
-          target: scannerContainerRef.current!, 
-          constraints: {facingMode: "environment"}, 
-          area: { top: "25%", right: "10%", left: "10%", bottom: "25%" }, 
-          singleChannel: false 
-        }, 
-        numOfWorkers: typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? Math.max(1, navigator.hardwareConcurrency - 1) : 1, 
-        locate: true, 
-        frequency: 8, 
-        decoder: { 
-          readers: [ "code_128_reader", "ean_reader" ], 
-          debug: { drawBoundingBox: true, showFrequency: false, drawScanline: true, showPattern: false }, 
-          multiple: false 
-        }, 
-        locator: { 
-          halfSample: true, 
-          patchSize: "medium", 
-          debug: { showCanvas: false } 
-        } 
-      }; 
-      Quagga.init(quaggaConfig, (err: any) => { 
-        if (err) { 
-          const errMsg = typeof err === 'string' ? err : (err.message || 'Unknown init error'); 
-          setScannerError(`Scanner init failed: ${errMsg}`); 
-          sonnerToast.error(`Scanner init failed: ${errMsg}`); 
-          setIsScannerActive(false); 
-          setIsQuaggaInitialized(false); 
-          return; 
-        } 
-        setIsQuaggaInitialized(true); 
-        Quagga.start(); 
-        Quagga.onDetected(onDetectedReturns); 
-        Quagga.onProcessed((processedResult: any) => { 
-          const drawingCtx = Quagga.canvas.ctx.overlay; 
-          const drawingCanvas = Quagga.canvas.dom.overlay; 
-          if (processedResult && drawingCanvas && drawingCtx) { 
-            if (processedResult.boxes) { 
-              drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.width as any || "0"), parseInt(drawingCanvas.height as any || "0")); 
-              processedResult.boxes.filter((box: any) => box !== processedResult.box).forEach((box: any) => { 
-                Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: 'green', lineWidth: 2 }); 
-              }); 
-            } 
-            if (processedResult.box) { Quagga.ImageDebug.drawPath(processedResult.box, { x: 0, y: 1 }, drawingCtx, { color: '#00F', lineWidth: 2 }); } 
-            if (processedResult.codeResult && processedResult.codeResult.code) { Quagga.ImageDebug.drawPath(processedResult.line, { x: 'x', y: 'y' }, drawingCtx, { color: 'red', lineWidth: 3 }); } 
-          } 
-        }); 
-      }); 
-    } else { 
-      stopQuaggaScannerReturns(); 
-    } 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isScannerActive, onDetectedReturns]); // Removed stopQuaggaScannerReturns from deps as it changes too often
+
+      try {
+        const barcodes = await barcodeDetector.detect(videoRef.current);
+        if (barcodes.length > 0) {
+          const detectedValue = barcodes[0].rawValue;
+          if (detectedValue) {
+            console.log("BarcodeDetector API Detected:", detectedValue);
+            sonnerToast.success("Barcode Scanned! Searching...");
+            setIsScannerActive(false); // This triggers the cleanup
+            setSearchBarcode(detectedValue);
+            findSalesByBarcodeGlobal(detectedValue, 1);
+          } else {
+            animationFrameId.current = requestAnimationFrame(scanForBarcode);
+          }
+        } else {
+          animationFrameId.current = requestAnimationFrame(scanForBarcode);
+        }
+      } catch (err: any) {
+        console.error("Error during barcode detection:", err);
+        setScannerError(`Scanning error: ${err.message}`);
+        setIsScannerActive(false); // Stop on error
+      }
+    };
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(mediaStream => {
+        stream = mediaStream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().then(() => {
+            animationFrameId.current = requestAnimationFrame(scanForBarcode);
+          });
+        }
+      })
+      .catch(err => {
+        console.error("Failed to get user media", err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setScannerError(`Camera access failed: ${errMsg}. Please grant permission and try again.`);
+        sonnerToast.error(`Camera access failed. Please grant permission.`);
+        setIsScannerActive(false);
+      });
+
+    // Cleanup function runs when isScannerActive becomes false or component unmounts
+    return () => {
+      stopScan();
+    };
+  }, [isScannerActive, isApiSupported, findSalesByBarcodeGlobal]);
 
 
   const toggleCameraScanner = () => {
-    if (isScannerActive) setIsScannerActive(false);
-    else { setSearchBarcode(''); setFoundSalesByBarcode([]); setSelectedSaleForReturn(null); setSearchPagination(null); setError(null); setScannerError(null); setIsScannerActive(true); }
+    if (isScannerActive) {
+      setIsScannerActive(false);
+    } else {
+      if (!isApiSupported) {
+        setScannerError("Barcode scanning is not supported by your browser. Try updating it or using a different one like Chrome on Android.");
+        sonnerToast.error("Your browser doesn't support the built-in scanner.");
+        return;
+      }
+      // Reset state for a new scan
+      setSearchBarcode('');
+      setFoundSalesByBarcode([]);
+      setSelectedSaleForReturn(null);
+      setSearchPagination(null);
+      setError(null);
+      setScannerError(null);
+      setIsScannerActive(true);
+    }
   };
+
 
   const handleBarcodeSearch = () => {
     if (searchBarcode.trim()) { findSalesByBarcodeGlobal(searchBarcode.trim(), 1); }
@@ -223,7 +242,6 @@ export default function VendorReturnsPage() {
       if (!response.ok) { const errData = await response.json(); throw new Error(errData.message || 'Failed to update status'); }
       sonnerToast.success('Item marked as returned. Aggregates adjusted.');
       if (currentSearchTerm && searchPagination) {
-        // If the returned item was the last on the page, and it's not page 1, go to previous page
         if (foundSalesByBarcode.length === 1 && searchPagination.currentPage > 1 && searchPagination.totalItems > searchPagination.pageSize) {
             findSalesByBarcodeGlobal(currentSearchTerm, searchPagination.currentPage - 1);
         } else {
@@ -239,10 +257,9 @@ export default function VendorReturnsPage() {
   if (!user) { return ( <main className="flex min-h-screen flex-col items-center justify-center p-4"> <Loader2 className="h-12 w-12 animate-spin text-primary" /> </main> ); }
 
   const renderSaleItemRow = (sale: SaleTransaction, onSelect?: (sale: SaleTransaction) => void) => {
-    // Determine if this sale should show the direct "Return Item" button
     const showDirectReturnButton = 
-        (selectedSaleForReturn?.id === sale.id) || // It's explicitly selected by the user
-        (foundSalesByBarcode.length === 1 && searchPagination?.totalItems === 1); // It's the only absolute result
+        (selectedSaleForReturn?.id === sale.id) ||
+        (foundSalesByBarcode.length === 1 && searchPagination?.totalItems === 1);
 
     return (
         <TableRow 
@@ -259,24 +276,11 @@ export default function VendorReturnsPage() {
           <TableCell className="text-right">₹{sale.calculatedSellPrice.toFixed(2)}</TableCell>
           <TableCell className="text-center">
             {showDirectReturnButton ? (
-                <Button 
-                    variant="destructive" 
-                    size="sm" 
-                    onClick={(e) => { e.stopPropagation(); handleMarkAsReturned(sale);}} 
-                    disabled={isUpdating === sale.id} 
-                    className="h-8"
-                >
-                    {isUpdating === sale.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />}
-                    Return Item
+                <Button variant="destructive" size="sm" onClick={(e) => { e.stopPropagation(); handleMarkAsReturned(sale);}} disabled={isUpdating === sale.id} className="h-8">
+                    {isUpdating === sale.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Undo2 className="mr-2 h-4 w-4" />} Return Item
                 </Button>
-            // Show Select button only if 'onSelect' is provided (meaning multiple items context) AND it's not the one to return directly
             ) : onSelect ? ( 
-                <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => onSelect(sale)} 
-                    className="h-8"
-                >
+                <Button variant="ghost" size="sm" onClick={() => onSelect(sale)} className="h-8">
                     <CheckCircle className="mr-2 h-4 w-4 text-primary"/> Select
                 </Button>
             ) : null}
@@ -288,7 +292,15 @@ export default function VendorReturnsPage() {
 
   return (
     <>
-      <style jsx global>{`#${QUAGGA_SCANNER_REGION_ID_RETURNS}{position:relative;width:100%;min-height:250px;overflow:hidden;background-color:#333}#${QUAGGA_SCANNER_REGION_ID_RETURNS} video,#${QUAGGA_SCANNER_REGION_ID_RETURNS} canvas.drawingBuffer{position:absolute;left:0;top:0;width:100%!important;height:100%!important}#${QUAGGA_SCANNER_REGION_ID_RETURNS} video{object-fit:cover}#${QUAGGA_SCANNER_REGION_ID_RETURNS} canvas.drawingBuffer{z-index:10}`}</style>
+      <style jsx global>{`
+        @keyframes returns-scan-line-anim {
+          0% { top: 10%; }
+          100% { top: 90%; }
+        }
+        .animate-scan-line-returns {
+          animation: returns-scan-line-anim 2.5s ease-in-out infinite alternate;
+        }
+      `}</style>
       <main suppressHydrationWarning className="min-h-screen p-4 md:p-6 bg-slate-50 dark:bg-slate-900">
         <Toaster richColors position="top-right" />
         <div className="max-w-5xl mx-auto">
@@ -301,8 +313,19 @@ export default function VendorReturnsPage() {
             <CardHeader><CardTitle>Find Item to Return (Searches "SOLD" Items)</CardTitle></CardHeader>
             <CardContent className="space-y-6">
                <div className="space-y-2">
-                  <Button type="button" onClick={toggleCameraScanner} variant="outline" className="w-full" disabled={isSearching || (isUpdating !== null)}><Camera className="mr-2 h-4 w-4" /> {isScannerActive ? "Stop Camera Scan" : "Scan Barcode with Camera"}</Button>
-                  {isScannerActive && (<div className="my-2 p-1 border rounded-md bg-gray-200 dark:bg-gray-800 shadow-inner"><div id={QUAGGA_SCANNER_REGION_ID_RETURNS} ref={scannerContainerRef} style={{ width: "100%", minHeight: "250px" }}></div></div>)}
+                  <Button type="button" onClick={toggleCameraScanner} variant="outline" className="w-full" disabled={isSearching || (isUpdating !== null) || !isApiSupported}>
+                      <Camera className="mr-2 h-4 w-4" /> 
+                      {isScannerActive ? "Stop Camera Scan" : (isApiSupported ? "Scan Barcode with Camera" : "Scanner Not Supported")}
+                  </Button>
+                  {isScannerActive && (
+                    <div className="my-2 p-1 border rounded-md bg-gray-900 shadow-inner relative overflow-hidden aspect-video">
+                        <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-[90%] h-[50%] border-2 border-dashed border-white/50 rounded-lg" />
+                        </div>
+                        <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500 animate-scan-line-returns" />
+                    </div>
+                  )}
                   {scannerError && (<div className="flex items-center gap-2 text-sm text-red-600 bg-red-100 dark:bg-red-900/30 p-3 rounded-md"><XCircle className="h-5 w-5 flex-shrink-0" /><p>{scannerError}</p></div>)}
               </div>
               <div className="space-y-2">
