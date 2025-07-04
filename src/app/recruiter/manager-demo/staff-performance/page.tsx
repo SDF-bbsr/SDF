@@ -73,7 +73,7 @@ export default function StaffPerformancePage() {
         break;
       case 'last7d':
         sDate = new Date(nowIST);
-        sDate.setDate(nowIST.getDate() - 7);
+        sDate.setDate(nowIST.getDate() - 6);
         break;
       case 'thisMonth':
         sDate = new Date(nowIST.getFullYear(), nowIST.getMonth(), 1);

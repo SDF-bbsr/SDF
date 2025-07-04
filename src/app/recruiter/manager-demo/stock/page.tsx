@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
     ChevronDown, ChevronRight, Edit3, Loader2, AlertCircle, PlusCircle, RefreshCw, CalendarDays, Search, History, Lightbulb, 
-    AlertTriangle, CheckCircle, TrendingDown, ListChecks, FileSpreadsheet  // <-- ADDED ICONS
+    AlertTriangle, CheckCircle, TrendingDown, ListChecks // <-- ADDED ICONS
 } from 'lucide-react'; // Removed ChevronsLeft, ChevronsRight
 import { toast as sonnerToast, Toaster } from 'sonner';
 
@@ -138,7 +137,7 @@ export default function StockLedgerPage() {
     const [isInsightLoading, setIsInsightLoading] = useState(true);
     const [isInsightExpanded, setIsInsightExpanded] = useState(false);
 
-    const [isExporting, setIsExporting] = useState(false);
+    // Removed pagination state: currentPage, pageCursors, hasNextPage
 
     const monthOptions = useMemo(() => getMonthOptions(), []);
 
@@ -449,131 +448,6 @@ export default function StockLedgerPage() {
         </Card>
     );
 
-    // --- vvv NEW EXPORT HANDLER FUNCTION vvv ---
-    const handleExportToExcel = async () => {
-        // 1. Show confirmation dialog
-        const isConfirmed = window.confirm(
-            "This will export the complete stock ledger for the selected month. This can be a database-read-heavy operation. Do not perform this action frequently.\n\nDo you want to continue?"
-        );
-
-        if (!isConfirmed) {
-            return;
-        }
-
-        setIsExporting(true);
-        sonnerToast.info(`Starting Excel export for ${monthOptions.find(m => m.value === selectedMonth)?.label}...`);
-
-        try {
-            // 2. Fetch the full, unfiltered data from the new API endpoint
-            const response = await fetch(`/api/manager/stock-ledger/export?month=${selectedMonth}`);
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to fetch data for export.');
-            }
-            const { items: ledgerData }: { items: MonthlyStockLedgerItem[] } = await response.json();
-
-            if (!ledgerData || ledgerData.length === 0) {
-                sonnerToast.warning("No data available to export for the selected month.");
-                return;
-            }
-
-            // 3. Process data into the desired Excel format
-            
-            // Get the year and month number from selectedMonth (e.g., '2023-10')
-            const [year, month] = selectedMonth.split('-').map(Number);
-            
-            // Generate all dates for the month
-            const lastDayOfMonth = new Date(year, month, 0).getDate();
-            const dateHeaders: string[] = [];
-            for (let day = 1; day <= lastDayOfMonth; day++) {
-                // Format as DD-MM-YYYY
-                const dateStr = `${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}-${year}`;
-                dateHeaders.push(dateStr);
-            }
-
-            // Define all headers in the correct order
-            const excelHeaders = [
-                "Product",
-                "Opening (kg)",
-                "Restocked (kg)",
-                "Sold (kg)",
-                "Closing (kg)",
-                ...dateHeaders
-            ];
-            
-            const excelRows = ledgerData.map(item => {
-                // Pre-process restock entries into a map for easy lookup: { 'YYYY-MM-DD': 'Quantity kg - Notes' }
-                const restocksByDate = new Map<string, string>();
-                if (item.restockEntriesThisMonth) {
-                    Object.values(item.restockEntriesThisMonth).forEach(randomEntryMap => {
-                        Object.values(randomEntryMap).forEach(detail => {
-                            // The key for the map should be the restock date 'YYYY-MM-DD' from the entry
-                            const entryDate = detail.date; // e.g., "2023-10-25"
-
-                            const formattedEntry = `${detail.quantityKg} kg${detail.notes ? ` - ${detail.notes}` : ''}`;
-                            
-                            // Handle multiple restocks on the same day
-                            if (restocksByDate.has(entryDate)) {
-                                restocksByDate.set(entryDate, restocksByDate.get(entryDate) + `; ${formattedEntry}`);
-                            } else {
-                                restocksByDate.set(entryDate, formattedEntry);
-                            }
-                        });
-                    });
-                }
-
-                // Build the row object with keys matching the headers
-                const row: { [key: string]: any } = {
-                    "Product": `${item.productName} (${item.productArticleNo})`,
-                    "Opening (kg)": item.openingStockKg,
-                    "Restocked (kg)": item.totalRestockedThisMonthKg,
-                    "Sold (kg)": item.totalSoldThisMonthKg,
-                    "Closing (kg)": item.closingStockKg,
-                };
-                
-                // Populate the date columns
-                dateHeaders.forEach(headerDate => { // headerDate is 'DD-MM-YYYY'
-                    // Convert header date to 'YYYY-MM-DD' to match our map keys
-                    const [d, m, y] = headerDate.split('-');
-                    const lookupDate = `${y}-${m}-${d}`;
-                    
-                    row[headerDate] = restocksByDate.get(lookupDate) || ''; // Use empty string if no restock on this date
-                });
-                
-                return row;
-            });
-
-            // 4. Generate and download the XLSX file
-            const worksheet = XLSX.utils.json_to_sheet(excelRows, { header: excelHeaders });
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Stock Ledger");
-            
-            // Adjust column widths (optional but recommended for readability)
-            const colWidths = [
-                { wch: 40 }, // Product
-                { wch: 15 }, // Opening
-                { wch: 15 }, // Restocked
-                { wch: 15 }, // Sold
-                { wch: 15 }, // Closing
-            ];
-            // Set a default width for all date columns
-            dateHeaders.forEach(() => colWidths.push({ wch: 25 }));
-            worksheet['!cols'] = colWidths;
-
-
-            const fileName = `StockLedger_${selectedMonth}.xlsx`;
-            XLSX.writeFile(workbook, fileName);
-
-            sonnerToast.success("Excel file has been generated successfully!");
-
-        } catch (error: any) {
-            console.error("Excel Export Error:", error);
-            sonnerToast.error("Export Failed: " + error.message);
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
     return (
         <>
             <Toaster richColors position="top-right" />
@@ -669,22 +543,7 @@ export default function StockLedgerPage() {
                                     </Select>
                                 </div>
 
-                                {/* --- vvv ADD THE NEW EXPORT BUTTON HERE vvv --- */}
-                                <div className="order-5 md:order-6 col-span-1 sm:col-auto">
-                                    <Button 
-                                        onClick={handleExportToExcel}
-                                        size="sm" 
-                                        variant="outline"
-                                        className="w-full sm:w-auto text-xs sm:text-sm h-8 sm:h-9 whitespace-nowrap" 
-                                        disabled={isExporting || isLoading}
-                                        title="Export the full ledger for the selected month to Excel"
-                                    >
-                                        {isExporting ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <FileSpreadsheet className="mr-1 h-3 w-3"/>}
-                                        Export
-                                    </Button>
-                                </div>
-
-                                {/* <div className="order-2 md:order-3 col-span-1 sm:col-auto">
+                                <div className="order-2 md:order-3 col-span-1 sm:col-auto">
                                     <Button 
                                         onClick={handleSyncVisibleSales} 
                                         size="sm" 
@@ -709,7 +568,7 @@ export default function StockLedgerPage() {
                                         {isSyncingEntireMonth ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <History className="mr-1 h-3 w-3"/>}
                                         Sync All for Month
                                     </Button>
-                                </div> */}
+                                </div>
                                 
                                 <div className="order-4 md:order-5 col-span-2 sm:col-span-1 md:col-auto">
                                     <Dialog open={isAddStockDialogOpen} onOpenChange={setIsAddStockDialogOpen}>

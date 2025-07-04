@@ -179,10 +179,10 @@ export default function ItemPerformancePage() {
         // sDate and eDate already set to today
         break;
       case 'last7d':
-        sDate.setDate(nowIST.getDate() - 7);
+        sDate.setDate(nowIST.getDate() - 6);
         break;
       case 'last30d':
-        sDate.setDate(nowIST.getDate() - 30);
+        sDate.setDate(nowIST.getDate() - 29);
         break;
       case 'thisWeek': {
         const day = nowIST.getDay(); // Sunday - 0, Monday - 1, ..., Saturday - 6

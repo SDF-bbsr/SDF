@@ -1,4 +1,4 @@
-// src/app/manager/protected/sales-log/page.tsx
+// src/app/recruiter/manager-demo/sales-log/page.tsx
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
@@ -51,7 +51,7 @@ interface DailySaleSummary {
 }
 
 type ViewMode = 'individual' | 'daily';
-type QuickPeriod = 'today' | 'thisWeek' | 'thisMonth' | 'last7d' | 'last30d' | 'custom';
+type QuickPeriod = 'today' | 'last7d' | 'last30d' | 'custom';
 
 // For Bulk Add Payload (matching API expectation)
 interface ManagerBulkSaleItemPayloadFE { // FE for Frontend
@@ -108,7 +108,7 @@ export default function ManagerSalesLogPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
 
-  const [activeQuickPeriod, setActiveQuickPeriod] = useState<QuickPeriod>('thisWeek');  
+  const [activeQuickPeriod, setActiveQuickPeriod] = useState<QuickPeriod>('last7d');
   const [customDateRange, setCustomDateRange] = useState({ startDate: '', endDate: '' });
   const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
 
@@ -139,32 +139,19 @@ export default function ManagerSalesLogPage() {
     let sDate = nowIST;
     let eDate = nowIST;
 
-    // inside getDateRangeForQuickPeriod function
     switch(period) {
-      case 'today':
-          // sDate and eDate are already set to today
-          break;
-      case 'thisWeek': {
-          const day = nowIST.getDay(); // Sunday - 0, Monday - 1
-          sDate.setDate(nowIST.getDate() - day + (day === 0 ? -6 : 1)); // Monday
-          eDate = new Date(sDate);
-          eDate.setDate(sDate.getDate() + 6); // Sunday
-          break;
-        }
-      case 'thisMonth':
-          sDate = new Date(nowIST.getFullYear(), nowIST.getMonth(), 1);
-          eDate = new Date(nowIST.getFullYear(), nowIST.getMonth() + 1, 0);
-          break;
-      case 'last7d':
-          sDate = new Date(nowIST);
-          sDate.setDate(nowIST.getDate() - 7);
-          break;
-      case 'last30d':
-          sDate = new Date(nowIST);
-          sDate.setDate(nowIST.getDate() - 30);
-          break;
-      case 'custom':
-          return {startDate: customDateRange.startDate, endDate: customDateRange.endDate};
+        case 'today':
+            break;
+        case 'last7d':
+            sDate = new Date(nowIST);
+            sDate.setDate(nowIST.getDate() - 6);
+            break;
+        case 'last30d':
+            sDate = new Date(nowIST);
+            sDate.setDate(nowIST.getDate() - 29);
+            break;
+        case 'custom':
+             return {startDate: customDateRange.startDate, endDate: customDateRange.endDate};
     }
     return {
         startDate: getISODateStringForClient(sDate),
@@ -318,73 +305,20 @@ export default function ManagerSalesLogPage() {
   };
 
   const handleBulkSalesSubmit = async () => {
-    if (!bulkSalesData.barcodes.trim() || !bulkSalesData.staffId || !bulkSalesData.dateOfSale) {
-      sonnerToast.error("Barcodes, Staff ID, and Date of Sale are required for bulk sales.");
-      return;
-    }
-    const barcodeLines = bulkSalesData.barcodes.trim().split('\n');
-    const salesToRecord: ManagerBulkSaleItemPayloadFE[] = [];
-    let parseErrors = 0;
-
-    for (const line of barcodeLines) {
-      const barcode = line.trim();
-      if (!barcode) continue;
-      const parsed = parseBarcode(barcode);
-      if (parsed) {
-        salesToRecord.push({
-          barcodeScanned: barcode,
-          articleNo: parsed.articleNo,
-          weightGrams: parsed.weightGrams,
-          staffId: bulkSalesData.staffId,
-          dateOfSale: bulkSalesData.dateOfSale,
-        });
-      } else {
-        parseErrors++;
-        sonnerToast.warning(`Invalid barcode format: "${barcode}"`);
-      }
-    }
-
-    if (parseErrors > 0) {
-      if (!confirm(`${parseErrors} barcode(s) had an invalid format and were ignored. Proceed with the ${salesToRecord.length} valid one(s)?`)) {
-        return;
-      }
-    }
-    if (salesToRecord.length === 0) {
-      sonnerToast.info("No valid sales data to submit after parsing.");
-      return;
-    }
-
     setIsSubmittingBulk(true);
-    try {
-      const response = await fetch('/api/manager/sales-transactions/bulk-record', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sales: salesToRecord }),
-      });
-      const result = await response.json();
-      if (!response.ok && response.status !== 207) {
-        throw new Error(result.message || "Bulk recording failed");
-      }
-      
-      sonnerToast.success(
-        `Bulk process finished: ${result.successfulRecords || 0} recorded, ${result.failedRecords || 0} failed.`
-      );
-      if (result.errors && result.errors.length > 0) {
-        result.errors.forEach((err: {barcode: string, message: string}) => sonnerToast.error(`Error for ${err.barcode}: ${err.message}`));
-      }
 
-      setIsBulkAddModalOpen(false);
-      setBulkSalesData(prev => ({ ...prev, barcodes: '' }));
-      if (viewMode === 'daily') {
-        fetchDailySummaries();
-      } else {
-        fetchIndividualTransactions(1);
-      }
-    } catch (err: any) {
-      sonnerToast.error("Bulk sales submission error: " + err.message);
-    } finally {
-      setIsSubmittingBulk(false);
-    }
+    // Simulate the API call delay
+    setTimeout(() => {
+        // Show the info toast explaining this is a demo
+        sonnerToast.info("This is a demo environment.", {
+            description: "Adding bulk sales is disabled. In a real application, this action would create new sales records for the provided barcodes.",
+        });
+
+        // Close the modal and reset state as if the operation was successful
+        setIsSubmittingBulk(false);
+        setIsBulkAddModalOpen(false);
+        setBulkSalesData(prev => ({ ...prev, barcodes: '' }));
+    }, 800); // 800ms delay to feel like a real action
   };
 
 const handleExportFilterChange = (field: keyof typeof exportFilters, value: string | string[]) => {
@@ -449,65 +383,32 @@ const fetchExportData = async (forPreviewCountOnly = false, forBarcodeTextExport
 
 const handleGenerateExcel = async () => {
   setIsExporting(true);
-  // 'dataToExport' comes from fetchExportData, which gets data from the API
-  const dataToExport = await fetchExportData(false, false) as SaleTransaction[];
-  setIsExporting(false);
-
-  if (!dataToExport || dataToExport.length === 0) {
-    sonnerToast.info("No data available to export for the selected criteria.");
-    return;
-  }
-
-  // 'selectedHeaders' correctly uses exportFilters.selectedFields to get labels
-  const selectedHeaders = exportFilters.selectedFields
-      .map(key => ALL_EXPORTABLE_FIELDS.find(f => f.key === key)?.label || String(key));
-
-  const worksheetData = dataToExport.map(tx => {
-      const row: any = {};
-      // This loop is correct: it iterates over the fields the user selected.
-      exportFilters.selectedFields.forEach(key => { 
-          const fieldConfig = ALL_EXPORTABLE_FIELDS.find(f => f.key === key);
-          let value = tx[key as keyof SaleTransaction] as any; // Access data using the key from selectedFields
-
-          // Formatting for specific fields
-          if (key === 'timestamp' && value) {
-              value = new Date(value).toLocaleString();
-          }
-          if (key === 'calculatedSellPrice' && typeof value === 'number') {
-              value = value.toFixed(2);
-          }
-          // Add formatting for other numeric product fields if they exist
-          if ((key === 'product_taxPercentage' || 
-               key === 'product_purchasePricePerKg' || 
-               key === 'product_sellingRatePerKg' || 
-               key === 'product_mrpPer100g') && typeof value === 'number') {
-              value = value.toFixed(2); // Or appropriate formatting
-          }
-
-
-          // The issue is likely here: if tx[key] is undefined, String(undefined) is "undefined"
-          // or if null, String(null) is "null". We want blank.
-          row[fieldConfig?.label || String(key)] = value !== undefined && value !== null ? String(value) : ''; 
+  
+  // Simulate the export generation delay
+  setTimeout(() => {
+      sonnerToast.info("This is a demo environment.", {
+          description: "Exporting to Excel is disabled. In a real application, this would generate and download a file with the selected data.",
       });
-      return row;
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(worksheetData, { header: selectedHeaders });
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "SalesData");
-  XLSX.writeFile(workbook, `SalesExport_${exportFilters.startDate}_to_${exportFilters.endDate}.xlsx`);
-  sonnerToast.success("Excel file generation initiated!");
+      
+      setIsExporting(false);
+      // Optionally close the modal after the action
+      // setIsExportModalOpen(false); 
+  }, 1000);
 };
 
 const handleExportBarcodesAsText = async () => {
   setIsExporting(true);
-  await fetchExportData(false, true);
-  setIsExporting(false);
-  if (exportedBarcodesText) {
-    sonnerToast.success("Barcodes prepared for copying.");
-  } else if(exportDataPreviewCount === 0) {
-    sonnerToast.info("No barcodes to export for the selected criteria.");
-  }
+
+  // Simulate the export preparation delay
+  setTimeout(() => {
+      sonnerToast.info("This is a demo environment.", {
+          description: "Exporting barcodes as text is disabled. In a real application, this would prepare a list of barcodes for you to copy.",
+      });
+
+      setIsExporting(false);
+      // Optionally close the modal after the action
+      // setIsExportModalOpen(false);
+  }, 1000);
 };
 
 const copyBarcodesToClipboard = () => {
@@ -519,36 +420,19 @@ const copyBarcodesToClipboard = () => {
 };
 
 const handleDeleteSale = async (sale: SaleTransaction) => {
-  if (!confirm(`Are you sure you want to permanently delete sales transaction ID: ${sale.id} (Product: ${sale.product_articleName || sale.articleNo})? This action will also attempt to reverse its impact on daily aggregates and CANNOT be undone.`)) {
-    return;
-  }
+  // Simulate the processing state for better UX
   setTransactions(prev => prev.map(tx => tx.id === sale.id ? {...tx, _isProcessing: true} : tx));
-  
-  try {
-    const response = await fetch(`/api/manager/sales-transactions/${sale.id}`, {
-      method: 'DELETE',
-    });
-    if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.message || "Failed to delete sale transaction");
-    }
-    sonnerToast.success("Sale transaction deleted and aggregates adjusted successfully!");
-    if (viewMode === 'individual' && transactionPagination) {
-       // If last item on a page > 1, fetch previous page, else refetch current.
-      if (transactions.length === 1 && transactionPagination.currentPage > 1) {
-          fetchIndividualTransactions(transactionPagination.currentPage - 1);
-      } else {
-          fetchIndividualTransactions(transactionPagination.currentPage);
-      }
-    } else if (viewMode === 'daily') {
-      fetchDailySummaries();
-    } else { 
-      fetchIndividualTransactions(1);
-    }
-  } catch (err: any) {
-    sonnerToast.error("Error deleting sale: " + err.message);
-    setTransactions(prev => prev.map(tx => tx.id === sale.id ? {...tx, _isProcessing: false} : tx));
-  }
+
+  // Simulate the API call delay
+  setTimeout(() => {
+      // Show the info toast explaining this is a demo
+      sonnerToast.info("This is a demo environment.", {
+          description: `Deleting sales is disabled. In a real application, this action would permanently delete the transaction for "${sale.product_articleName || sale.articleNo}".`,
+      });
+
+      // Revert the processing state after the toast is shown
+      setTransactions(prev => prev.map(tx => tx.id === sale.id ? {...tx, _isProcessing: false} : tx));
+  }, 800); // A delay to make the UI state change visible
 };
 
 const isLoadingData = (viewMode === 'daily' && isLoadingDailySummaries) || (viewMode === 'individual' && isLoadingTransactions);
@@ -598,13 +482,11 @@ return (
                   >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="today">Today</SelectItem>
-                        <SelectItem value="thisWeek">This Week (Mon-Sun)</SelectItem>
-                        <SelectItem value="thisMonth">This Month</SelectItem>
-                        <SelectItem value="last7d">Last 7 Days</SelectItem>
-                        <SelectItem value="last30d">Last 30 Days</SelectItem>
-                        <SelectItem value="custom">Custom Range</SelectItem>
-                    </SelectContent>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="last7d">Last 7 Days</SelectItem>
+                          <SelectItem value="last30d">Last 30 Days</SelectItem>
+                          <SelectItem value="custom">Custom Range</SelectItem>
+                      </SelectContent>
                   </Select>
               </div>
               
@@ -738,6 +620,7 @@ return (
       </DialogContent>
     </Dialog>
     
+    {/* Export Dialog */}
 {/* Export Dialog */}
 <Dialog open={isExportModalOpen} onOpenChange={(isOpen) => { setIsExportModalOpen(isOpen); if (!isOpen) { setExportDataPreviewCount(null); setExportedBarcodesText(''); setActiveExportTab('excel'); }}}>
   <DialogContent className="sm:max-w-2xl max-h-[95vh] flex flex-col p-4 sm:p-6">

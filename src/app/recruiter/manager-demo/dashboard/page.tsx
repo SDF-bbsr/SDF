@@ -1,4 +1,4 @@
-// src/app/manager/protected/dashboard/page.tsx
+// src/app/recruiter/manager-demo/dashboard/page.tsx
 "use client";
 
 import { useEffect, useState } from 'react';

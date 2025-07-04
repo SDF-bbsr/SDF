@@ -3,9 +3,10 @@ import { db } from '@/lib/firebaseAdmin';
 import { NextRequest, NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 
+// Change 1: monthToSync is now optional.
 interface SyncSalesRequestBody {
     productArticleNos?: string[];
-    monthToSync: string;
+    monthToSync?: string;
 }
 
 interface ProductListItemAPI {
@@ -17,9 +18,20 @@ export async function POST(req: NextRequest) {
     console.log('[STOCK SYNC SALES] POST /api/manager/stock-ledger/sync-sales: Request received.');
     try {
         const body: SyncSalesRequestBody = await req.json();
-        const { productArticleNos, monthToSync } = body;
+        // Change 2: Use `let` to allow monthToSync to be reassigned.
+        let { productArticleNos, monthToSync } = body;
 
-        if (!monthToSync || !/^\d{4}-\d{2}$/.test(monthToSync)) {
+        // Change 3: Logic to handle missing monthToSync.
+        if (!monthToSync) {
+            console.log('[STOCK SYNC SALES] monthToSync not provided. Calculating current month for Asia/Kolkata timezone.');
+            const now = new Date();
+            const timeZone = 'Asia/Kolkata';
+            const year = new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone }).format(now);
+            const month = new Intl.DateTimeFormat('en-US', { month: '2-digit', timeZone }).format(now);
+            monthToSync = `${year}-${month}`;
+            console.log(`[STOCK SYNC SALES] Defaulting to current month: ${monthToSync}`);
+        } else if (!/^\d{4}-\d{2}$/.test(monthToSync)) {
+            // If it IS provided, it must be in the correct format.
             return NextResponse.json({ message: 'A valid month (YYYY-MM) is required.' }, { status: 400 });
         }
         
@@ -49,7 +61,7 @@ export async function POST(req: NextRequest) {
         }
         
         // Step 2: Fetch all necessary data in parallel (Optimized)
-        console.log('[STOCK SYNC SALES] Starting parallel data fetch for all products.');
+        console.log(`[STOCK SYNC SALES] Starting parallel data fetch for all products for month ${monthToSync}.`);
         const [year, monthNum] = monthToSync.split('-').map(Number);
         const firstDayOfMonth = `${monthToSync}-01`;
         const lastDayDate = new Date(year, monthNum, 0); 

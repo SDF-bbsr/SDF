@@ -1,4 +1,4 @@
-// src/app/(manager)/login/page.tsx
+// src/app/manager/login/page.tsx
 "use client";
 
 import { useState } from 'react';
