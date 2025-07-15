@@ -1,3 +1,4 @@
+// src/app/recruiter/manager-demo/layout.tsx
 "use client";
 
 import { useState, useEffect } from 'react';

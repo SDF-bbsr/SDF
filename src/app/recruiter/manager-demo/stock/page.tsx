@@ -1,4 +1,4 @@
-// src/app/manager/protected/stock/page.tsx
+// src/app/recruiter/manager-demo/stock/page.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -238,22 +238,30 @@ export default function StockLedgerPage() {
     }, [searchTerm, allLedgerDataForMonth]);
 
     const handleAddStock = async () => {
-        if (!selectedProductForRestock || !restockQuantityKg || !selectedMonth || !restockDate) { sonnerToast.error("Product, quantity, month, and restock date are required."); return; }
+        if (!selectedProductForRestock || !restockQuantityKg || !selectedMonth || !restockDate) {
+            sonnerToast.error("Product, quantity, month, and restock date are required.");
+            return;
+        }
+        // Set the loading state for the button
         setIsAddingStock(true);
-        try {
-            const response = await fetch('/api/manager/stock-ledger', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    productArticleNo: selectedProductForRestock, 
-                    quantityKg: parseFloat(restockQuantityKg), notes: restockNotes,
-                    monthToUpdate: selectedMonth, restockDate: restockDate,
-                }),
+        setError(null);
+
+        // Simulate the API call delay
+        setTimeout(() => {
+            // Show the info toast explaining this is a demo
+            sonnerToast.info("This is a demo environment.", {
+                description: "Adding new stock is disabled. In a real application, this would update the database.",
             });
-            if (!response.ok) { const d = await response.json(); throw new Error(d.message || 'Failed to add stock');}
-            sonnerToast.success('Stock added successfully!'); setIsAddStockDialogOpen(false);
-            setSelectedProductForRestock(''); setRestockQuantityKg(''); setRestockNotes(''); setRestockDate(new Date().toISOString().split('T')[0]);
-            fetchStockLedgerData(selectedMonth); 
-        } catch (e:any) { sonnerToast.error("Error adding stock: " + e.message); } finally { setIsAddingStock(false); }
+
+            // Reset loading state, close dialog, and clear form after the toast appears
+            setIsAddingStock(false);
+            setIsAddStockDialogOpen(false);
+            setSelectedProductForRestock('');
+            setRestockQuantityKg('');
+            setRestockNotes('');
+            setRestockDate(new Date().toISOString().split('T')[0]);
+            // Note: The call to fetchData() is removed as no data actually changes.
+        }, 1000); // 1-second delay for simulation
     };
 
     const handleEditOpeningStock = (item: MonthlyStockLedgerItem) => {
@@ -267,44 +275,45 @@ export default function StockLedgerPage() {
             sonnerToast.error("Invalid opening stock quantity.");
             return;
         }
+        // Set the loading state for the button
         setIsUpdatingOpeningStock(true);
-        try {
-            const response = await fetch('/api/manager/stock-ledger/opening-stock', {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    productArticleNo: editingStockItem.productArticleNo,
-                    monthToUpdate: editingStockItem.month,
-                    newOpeningStockKg: parsedOpeningStock
-                 }),
+        setError(null);
+
+        // Simulate the API call delay
+        setTimeout(() => {
+            // Show the info toast explaining this is a demo
+            sonnerToast.info("This is a demo environment.", {
+                description: "Updating opening stock is disabled. In a real application, this would update the database.",
             });
-            if (!response.ok) { const d = await response.json(); throw new Error(d.message || 'Update failed');}
-            sonnerToast.success('Opening stock updated!'); 
-            setIsEditOpeningStockDialogOpen(false); 
-            fetchStockLedgerData(selectedMonth); 
-        } catch (e:any) { sonnerToast.error("Update error: " + e.message); } finally { setIsUpdatingOpeningStock(false); }
+
+            // Reset loading state and close dialog after the toast appears
+            setIsUpdatingOpeningStock(false);
+            setIsEditOpeningStockDialogOpen(false);
+            // Note: The call to fetchData() is removed as no data actually changes.
+        }, 1000); // 1-second delay for simulation
     };
 
-    const handleSyncVisibleSales = async () => { 
+    const handleSyncVisibleSales = async () => {
         const itemsToSync = searchTerm ? displayedLedgerData : allLedgerDataForMonth;
-        if (itemsToSync.length === 0) { sonnerToast.info("No products currently visible to sync."); return; }
+        if (itemsToSync.length === 0) {
+            sonnerToast.info("No products currently visible to sync.");
+            return;
+        }
+        // Set the loading state for the button
         setIsSyncingVisible(true);
-        try {
-            const nos = itemsToSync.map(i => i.productArticleNo);
-            const response = await fetch('/api/manager/stock-ledger/sync-sales', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ productArticleNos: nos, monthToSync: selectedMonth }),
+        setError(null);
+
+        // Simulate the API call delay
+        setTimeout(() => {
+            // Show the info toast explaining this is a demo
+            sonnerToast.info("This is a demo environment.", {
+                description: "Syncing sales is disabled. In a real application, this would fetch latest sales data and update the ledger.",
             });
-            const resData = await response.json();
-            if (!response.ok) throw new Error(resData.message || 'Sync failed');
-            if (response.status === 207) {
-                 sonnerToast.warning(resData.message || `Sales sync for visible products partially complete. Check details.`, {
-                    description: `Success: ${resData.successCount}, Failed: ${resData.errorCount}`,
-                });
-            } else {
-                sonnerToast.success(resData.message || `Sales synced for ${nos.length} visible products in ${selectedMonth}`);
-            }
-            fetchStockLedgerData(selectedMonth);
-        } catch (e:any) { sonnerToast.error("Sync Visible error: " + e.message); } finally { setIsSyncingVisible(false); }
+
+            // Reset loading state after the toast appears
+            setIsSyncingVisible(false);
+            // Note: The call to fetchData() is removed as no data actually changes.
+        }, 1000); // 1-second delay for simulation
     };
 
     const handleSyncEntireMonthSales = async () => {
@@ -317,44 +326,25 @@ export default function StockLedgerPage() {
             return;
         }
 
-        if (!confirm(`Are you sure you want to sync sales for ALL ${productList.length} products for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}? This might take some time. This is a Document Read Expensive task`)) {
+        if (!confirm(`Are you sure you want to sync sales for ALL ${productList.length} products for ${monthOptions.find(m => m.value === selectedMonth)?.label || selectedMonth}? This might take some time. This is a Document Read Expensive task`)) {
             return;
         }
-
+        
+        // Set the loading state for the button
         setIsSyncingEntireMonth(true);
-        const allProductArticleNos = productList.map(p => p.id);
+        setError(null);
 
-        try {
-            sonnerToast.info(`Starting sales sync for all ${allProductArticleNos.length} products for ${monthOptions.find(m=>m.value === selectedMonth)?.label || selectedMonth}... This may take a moment.`, { duration: 10000 });
-            const response = await fetch('/api/manager/stock-ledger/sync-sales', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ productArticleNos: allProductArticleNos, monthToSync: selectedMonth }),
+        // Simulate the API call delay
+        setTimeout(() => {
+            // Show the info toast explaining this is a demo
+            sonnerToast.info("This is a demo environment.", {
+                description: "Syncing sales for the entire month is disabled. In a real application, this would update the ledger for all products.",
             });
-            const resData = await response.json();
 
-            if (!response.ok && response.status !== 207) {
-                throw new Error(resData.message || 'Sync for all products failed');
-            }
-
-            if (response.status === 207) { 
-                 sonnerToast.warning(resData.message || `Sales sync for all products partially complete.`, {
-                    description: `Success: ${resData.successCount}, Failed: ${resData.errorCount}. Check console for detailed errors.`,
-                    duration: 15000
-                });
-                if (resData.errors && resData.errors.length > 0) {
-                    console.warn("[STOCK SYNC ALL] Partial failure details:", resData.errors);
-                }
-            } else {
-                sonnerToast.success(resData.message || `Sales successfully synced for all ${allProductArticleNos.length} products in ${selectedMonth}.`);
-            }
-            fetchStockLedgerData(selectedMonth); 
-        } catch (e: any) {
-            sonnerToast.error("Sync All Products Error: " + e.message, { duration: 10000 });
-            console.error("[STOCK SYNC ALL] Error:", e);
-        } finally {
+            // Reset loading state after the toast appears
             setIsSyncingEntireMonth(false);
-        }
+            // Note: The call to fetchData() is removed as no data actually changes.
+        }, 1000); // 1-second delay for simulation
     };
 
 
@@ -533,7 +523,7 @@ export default function StockLedgerPage() {
                                     />
                                 </div>
 
-                                <div className="order-1 md:order-2 col-span-2 sm:col-span-1 md:col-auto">
+                                {/* <div className="order-1 md:order-2 col-span-2 sm:col-span-1 md:col-auto">
                                     <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                                         <SelectTrigger className="w-full sm:w-[160px] md:w-[180px] text-xs sm:text-sm h-8 sm:h-9">
                                             <CalendarDays className="h-3 w-3 sm:h-4 sm:w-4 mr-1 opacity-70" />
@@ -541,9 +531,9 @@ export default function StockLedgerPage() {
                                         </SelectTrigger>
                                         <SelectContent>{monthOptions.map(o=><SelectItem key={o.value} value={o.value} className="text-xs sm:text-sm">{o.label}</SelectItem>)}</SelectContent>
                                     </Select>
-                                </div>
+                                </div> */}
 
-                                <div className="order-2 md:order-3 col-span-1 sm:col-auto">
+                                {/* <div className="order-2 md:order-3 col-span-1 sm:col-auto">
                                     <Button 
                                         onClick={handleSyncVisibleSales} 
                                         size="sm" 
@@ -555,9 +545,9 @@ export default function StockLedgerPage() {
                                         {isSyncingVisible ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <RefreshCw className="mr-1 h-3 w-3"/>}
                                         Sync Visible
                                     </Button>
-                                </div>
+                                </div> */}
 
-                                <div className="order-3 md:order-4 col-span-1 sm:col-auto">
+                                {/* <div className="order-3 md:order-4 col-span-1 sm:col-auto">
                                     <Button 
                                         onClick={handleSyncEntireMonthSales} 
                                         size="sm" 
@@ -568,7 +558,7 @@ export default function StockLedgerPage() {
                                         {isSyncingEntireMonth ? <Loader2 className="mr-1 h-3 w-3 animate-spin"/> : <History className="mr-1 h-3 w-3"/>}
                                         Sync All for Month
                                     </Button>
-                                </div>
+                                </div> */}
                                 
                                 <div className="order-4 md:order-5 col-span-2 sm:col-span-1 md:col-auto">
                                     <Dialog open={isAddStockDialogOpen} onOpenChange={setIsAddStockDialogOpen}>
